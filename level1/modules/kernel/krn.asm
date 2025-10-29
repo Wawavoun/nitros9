@@ -224,14 +224,20 @@ loop@               lda       ,x+                 get source byte
                     ldy       #Bt.Start+Bt.Size-1
 *<<<<<<<<<< CORSHAM PORT
                     else
+                    ifne      ec6809
+*>>>>>>>>>> EC6809  PORT
+                    ldx       #Bt.Start
+                    ldy       #Bt.Start+Bt.Size-1
+*<<<<<<<<<< EC6809  PORT
+                    else
                     ifne      f256
 *>>>>>>>>>> F256 PORT
                     ldy       #MappedIOStart      stop short of I/O area
 *<<<<<<<<<< F256 PORT
                     else
-*>>>>>>>>>> NOT(ATARI LIBER809PORT | CORSHAM PORT | F256 PORT)
+*>>>>>>>>>> NOT(ATARI LIBER809PORT | CORSHAM PORT | F256 PORT | EC6809 PORT)
                     ldy       #Bt.Start+Bt.Size
-*<<<<<<<<<< NOT(ATARI LIBER809PORT | CORSHAM PORT | F256 PORT)
+*<<<<<<<<<< NOT(ATARI LIBER809PORT | CORSHAM PORT | F256 PORT | EC6809 PORT)
                     endc
                     endc
                     endc
@@ -321,11 +327,21 @@ copy@               ldd       ,y++                get vector bytes
                     stb       $1D,x               mark $E800-$EFFF I/O area as allocated
 *<<<<<<<<<< CORSHAM PORT
                     else
-*>>>>>>>>>> NOT(ATARI LIBER809PORT | CORSHAM PORT)
+                    ifne      ec6809
+*>>>>>>>>>> EC6809 PORT
+* EC6809 needs $0000-$04FF and $E000-$EFFF reserved.
+                    ldb       #%11111000
+                    stb       ,x                  mark $0000-$04FF as allocated
+                    ldb       #%11111111
+                    stb       $1C,x               mark $E000-$E7FF I/O area as allocated
+                    stb       $1D,x               mark $E800-$EFFF I/O area as allocated
+*<<<<<<<<<< EC6809  PORT
+                    else
+*>>>>>>>>>> NOT(ATARI LIBER809PORT | CORSHAM PORT | EC6809 PORT)
 * All other ports need $0000-$04FF reserved.
                     ldb       #%11111000
                     stb       ,x                  mark $0000-$04FF as allocated
-*<<<<<<<<<< NOT(ATARI LIBER809PORT | CORSHAM PORT)
+*<<<<<<<<<< NOT(ATARI LIBER809PORT | CORSHAM PORT | EC6809 PORT)
                     endc
                     endc
 
@@ -610,11 +626,11 @@ P2Nam               fcs       /krnp2/
 
 EOMTop              equ       *
 
-                    ifeq      corsham+f256
-*>>>>>>>>>> NOT(CORSHAM PORT | F256 PORT)
+                    ifeq      corsham+f256+ec6809
+*>>>>>>>>>> NOT(CORSHAM PORT | F256 PORT | EC6809)
                     emod
 eom                 equ       *
-*<<<<<<<<<< NOT(CORSHAM PORT | F256 PORT)
+*<<<<<<<<<< NOT(CORSHAM PORT | F256 PORT | EC6809)
                     endc
 
 Vectors		        fdb	       SWI3		SWI3
@@ -630,11 +646,11 @@ Vectors		        fdb	       SWI3		SWI3
 *<<<<<<<<<< ATARI LIBER809 PORT
                     endc
                     
-                    ifne      corsham+f256
-*>>>>>>>>>> CORSHAM PORT | F256 PORT
+                    ifne      corsham+f256+ec6809
+*>>>>>>>>>> CORSHAM PORT | F256 PORT | EC6809
                     emod
 eom                 equ       *
-*<<<<<<<<<< CORSHAM PORT | F256 PORT
+*<<<<<<<<<< CORSHAM PORT | F256 PORT | EC6809
                     endc
 EOMSize             equ       *-EOMTop
 

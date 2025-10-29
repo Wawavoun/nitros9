@@ -161,7 +161,7 @@ around@
                     anda      #^INT_VKY_SOF
                     sta       INT_MASK_0
                     else
-                    ifne      corsham
+                    ifne      corsham+ec6809
 * Corsham SS-50 6809 board -- uses the Arduino as a clock source
 * Timer values:
 *    0 = disable timer interrupts
@@ -293,7 +293,7 @@ ClearInt
                     lda       #INT_VKY_SOF
                     sta       INT_PENDING_0       clear clock interrupt by writing bit back
                     else
-                    ifne      corsham
+                    ifne      corsham+ec6809
                     tst       PIA0Base+3
                     bmi       ClearInt            it's a clock interrupt -- clear it
                     jmp       [>D.SvcIRQ]         else service other possible IRQ

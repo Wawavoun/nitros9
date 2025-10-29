@@ -8,8 +8,7 @@ DISTRO		= $(CPU)L$(LEVEL)
 DISTRONAME	= NOS9_$(CPU)_L$(LEVEL)
 DISTROVER	= $(DISTRONAME)_$(NITROS9VER)_$(PORT)
 BOOTFILE	= bootfiles/bootfile
-DIRS		= cmds modules defs sys bootfiles
-
+DIRS		= cmds modules defs sys bootfiles bootrom
 
 CMDS		= $(shell $(CD) cmds; make --no-print-directory showobjs)
 CMDS_DEMO = $(shell $(CD) cmds; make --no-print-directory showobjs_demo)

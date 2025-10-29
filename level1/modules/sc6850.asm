@@ -8,7 +8,7 @@
 * Comment
 * ------------------------------------------------------------------
 *   1      2017/05/08  Boisy G. Pitre
-* Created for Corsham 6809
+* Created for Elektor EC-6809 6809 
 *
 
                     nam       sc6850

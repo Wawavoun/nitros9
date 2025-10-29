@@ -54,7 +54,7 @@ rev                 set       $00
                     fcb       C$BSP               IT.BSE backspace echo character
                     fcb       C$BELL              IT.OVF line overflow character (bell)
                     fcb       PARNONE             IT.PAR parity
-                    ifne      corsham
+                    ifne      corsham+ec6809
                     fcb       STOP2+WORD8+B4800   IT.BAU stop bits/word size/baud rate
                     else
                     fcb       STOP1+WORD8+B9600   IT.BAU stop bits/word size/baud rate
