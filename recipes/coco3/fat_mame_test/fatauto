@@ -1,0 +1,22 @@
+load utilpak1
+echo FAT32 integration checks
+dir /fat0
+dir /fat0 >/dd/fatdir
+dir -e /fat0
+dir -e /fat0 >/dd/fatdire
+list /fat0/hello.txt
+list /fat0/hello.txt >/dd/fathello
+copy /fat0/frag.bin /dd/fatfrag
+cmp /fat0/frag.bin /dd/fatfrag
+chd /fat0/subdir
+list nest.txt
+list nest.txt >/dd/fatnest
+chd child
+chd ...
+list hello.txt >/dd/fatparent
+chd /dd
+chx /fat0/subdir
+dir -x >/dd/fatxdir
+chx /dd/cmds
+echo FAT32DONE >/dd/fatdone
+echo FAT32 checks complete
