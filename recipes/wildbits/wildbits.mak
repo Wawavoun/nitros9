@@ -593,3 +593,8 @@ clean:
 	-rm -rf $(OBJDIR) $(LIBDIR) $(MODDIR) $(CLEAN_DIRS)
 
 .PHONY: all clean libs FORCE
+
+# Experimental native-block ABI. Build explicitly; not included in boot lists.
+.PHONY: blkdev-modules
+blkdev-modules: $(MODDIR)/blkdev $(MODDIR)/llwbsdblk $(MODDIR)/llmemblk
+$(MODDIR)/blkdev $(MODDIR)/llwbsdblk $(MODDIR)/llmemblk: $(DEFSDIR)/blkdev.d defsfile
