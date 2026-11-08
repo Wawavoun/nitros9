@@ -589,21 +589,25 @@ openzero@           clr       ,x+
                     subd      #1
                     bne       openzero@
                     lda       ,s
-                    sta       F.Creating,u
+                    cmpa      #3
+                    bne       openkind@
+                    inc       F.Deleting,u
+                    clra
+openkind@           sta       F.Creating,u
                     sty       F.Owner,u
                     ldx       5,s
                     stx       F.Regs,u
                     lbsr      Mount
-                    bcs       openfailed
+                    lbcs      openfailed
                     lda       PD.MOD,y
                     bita      #WRITE.
                     beq       openread@
                     lbsr      Writable
-                    bcs       openfailed
-openread@           bsr       CopyPath
-                    bcs       openfailed
+                    lbcs      openfailed
+openread@           lbsr      CopyPath
+                    lbcs      openfailed
                     lbsr      Resolve
-                    bcs       openfailed
+                    lbcs      openfailed
                     tst       F.Creating,u
                     beq       openexisting@
                     ldb       #E$CEF
@@ -613,9 +617,11 @@ openexisting@       lda       F.Entry+11,u
                     beq       openfile@
                     lda       PD.MOD,y
                     bita      #DIR.
+                    bne       opendir@
+                    tst       F.Deleting,u
                     beq       openaccessfree
-                    lbsr      DirectorySize
-                    bcs       openfailed
+opendir@            lbsr      DirectorySize
+                    lbcs      openfailed
                     bra       openok@
 openfile@           lda       PD.MOD,y
                     bita      #DIR.
@@ -627,14 +633,14 @@ openfile@           lda       PD.MOD,y
 openvalid@          leax      F.Start,u
                     lbsr      LoadVal
                     lbsr      ValidCluster
-                    bcs       openfailed
+                    lbcs      openfailed
 openok@             lda       PD.MOD,y
                     bita      #WRITE.
                     beq       openshare@
                     lbsr      CanWriteFile
-                    bcs       openfailed
+                    lbcs      openfailed
 openshare@          lbsr      RegisterPath
-                    bcs       openfailed
+                    lbcs      openfailed
                     ldb       F.Entry+11,u
                     lbsr      Attributes
                     sta       PD.ATT,y

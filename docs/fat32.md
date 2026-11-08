@@ -11,7 +11,8 @@ and the status calls used by `dir`, `dir -e`, `list` and `copy`. `pcf` implement
 extended metadata (45 bytes), with dot/deleted/long-name entries filtered.
 Enumeration shares the path position and rewinds with Seek to zero. Writable
 descriptors also support create, write, WriteLn, resize, delete, and I$MakDir.
-Directory removal, rename, and long-name mutations are not implemented. Names use case-insensitive ASCII
+Empty-directory removal is supported through I$Delete; rename and long-name
+mutations are not implemented. Names use case-insensitive ASCII
 8.3 aliases; long-name entries are skipped. Directory reads synthesize OS-9 records and metadata,
 including `.` and `..`. Their 24-bit FD cookies identify directory slots within
 an open directory, not disk addresses or cluster numbers. Raw RBF sector/FD
@@ -244,7 +245,7 @@ Level 1 and Level 2 pcf/blkdrv/VHD code: sector-crossing writes, WriteLn,
 zero-filled seek gaps, truncate/extend, reopen, deletion, directory growth,
 and FAT mirrors. Writes are not transactional: interruption or a media error
 partway through metadata updates may require filesystem repair. Initial write
-support is for short-name files; rmdir, rename, and LFN mutation remain
+support is for short-name files; rename and LFN mutation remain
 outside this implementation.
 
 ### Multi-process sharing checks
@@ -303,5 +304,35 @@ is saved in `.fat-root/reopen/`.
 
 The CPU suite checks nested dot-cluster values, parent traversal, duplicate and
 missing-parent errors, read-only rejection, and cleanup after first/second-half
-failures while writing an unpublished child's dot entries. Directory removal
-is still unsupported; `deldir` retains its E$BTyp guard on pcf devices.
+failures while writing an unpublished child's dot entries. The RBF-specific recursive `deldir` command retains its E$BTyp guard on pcf
+devices; use `del` to remove an empty directory.
+
+
+## Empty-directory removal
+
+`I$Delete` and the ordinary `del` command can remove an empty pcf directory.
+The file manager rejects live entries other than exact `.` and `..` records
+with `E$DNE`. Deleted slots are ignored; live LFN or volume-label slots are
+conservatively treated as nonempty. Root and final dot aliases are protected
+with `E$FNA`. Read-only media/entries and LFN mutation restrictions still apply.
+
+Before removal, pcf checks its open-path registry and every live process's
+working and execution directory references. A match returns `E$Share`, even
+through `/dd` versus `/pc0`, and even when another process holds no open path.
+Duplicated directory paths keep protection until their final close. Physical
+device statics, partition base, and the directory cluster identify the target.
+The volume operation lock excludes concurrent ChgDir while checking/removing.
+
+The MAME recipe runs `pcfrmdir`: 14 parent/child checks cover open and duplicated
+paths, foreign working/execution directories, removal after references are
+released, nonempty files/subdirectories, and root/dot protection. Each child
+resets its own default directories before deletion, so those checks prove
+protection of another process's references. Disk-write tracing requires zero
+writes during all eight rejected removals. It also runs `makdir /pc0/empty`
+and `del /dd/empty` to exercise the normal commands.
+
+The CPU tests cover both OS levels, including multi-cluster empty directories
+and rejection of cyclic directory chains without writes. The existing
+nontransactional metadata-update limitation still applies to successful
+removals interrupted by a media error or power loss. Recursive deletion via
+`deldir` remains RBF-only; this change does not bypass that utility's guard.

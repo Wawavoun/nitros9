@@ -92,6 +92,42 @@ def main():
             ok('Open',mode=1,path='TWO/NOTE.TXT');ok('Read',count=32)
             assert p.data(f.OUTPUT,8)==b'PERSIST\r';ok('Close')
             ok('ChgDir',mode=1,path='/pc0')
+            # Empty directories can be removed; live entries and default data/
+            # execution directory references (even without open paths) forbid it.
+            before=len(p.writes)
+            error('Delete','E$DNE',path='/pc0/ONE/TWO')
+            error('Delete','E$DNE',path='/pc0/ONE')
+            error('Delete','E$FNA',path='/pc0')
+            error('Delete','E$FNA',path='/pc0/ONE/TWO/.')
+            assert len(p.writes)==before
+            ok('MkDir',path='/pc0/EMPTY')
+            ok('ChgDir',mode=1,path='/pc0/EMPTY')
+            before=len(p.writes);error('Delete','E$Share',path='/pc0/EMPTY')
+            assert len(p.writes)==before
+            ok('ChgDir',mode=1,path='/pc0')
+            ok('ChgDir',mode=4,path='/pc0/EMPTY')
+            before=len(p.writes);error('Delete','E$Share',path='/pc0/EMPTY')
+            assert len(p.writes)==before
+            ok('ChgDir',mode=4,path='/pc0')
+            ok('Delete',path='/pc0/EMPTY')
+            error('Open','E$PNNF',mode=0x81,path='/pc0/EMPTY')
+            ok('Delete',path='/pc0/ONE/TWO/NOTE.TXT')
+            ok('Delete',path='/pc0/ONE/TWO')
+            ok('Delete',path='/pc0/ONE')
+            # Reclaim a directory chain after deleting all entries, including
+            # slots beyond its initial cluster. Reject cyclic chains first.
+            ok('MkDir',path='/pc0/CHAIN')
+            for i in range(18):
+                ok('Create',mode=3,path=f'/pc0/CHAIN/F{i}.TXT');ok('Close')
+            for i in range(18):ok('Delete',path=f'/pc0/CHAIN/F{i}.TXT')
+            ok('Delete',path='/pc0/CHAIN')
+            ok('MkDir',path='/pc0/CYCLE')
+            ok('Open',mode=0x81,path='/pc0/CYCLE')
+            cluster=int.from_bytes(p.data(f.WORK+p.fs['F.Start'],4),'big');ok('Close')
+            v.fat(cluster,cluster)
+            before=len(p.writes);error('Delete','E$BTyp',path='/pc0/CYCLE')
+            assert len(p.writes)==before
+            v.fat(cluster,0x0fffffff);ok('Delete',path='/pc0/CYCLE')
             # Fail the dot-entry sector write after zeroing and mirrored FAT
             # allocation; the unpublished child must be reclaimed.
             for half in (7,8):
@@ -133,5 +169,5 @@ def main():
                 if v.base+32<=lba<v.base+32+v.fatsize:
                     assert data==v.sectors.get(lba+v.fatsize,bytearray(512)),('FAT mirrors',lba)
             assert p.allocations==[b.STATE],p.allocations
-            print(f'PASS Level {level}: mkdir/nested/dot entries/rollback/cache failure/retry/create/read/write/WriteLn/seek gaps/resize/reopen/delete/directory growth/mirrors',flush=True)
+            print(f'PASS Level {level}: rmdir/nonempty/in-use/root/dot rejection/mkdir/nested/dot entries/rollback/cache failure/retry/create/read/write/WriteLn/seek gaps/resize/reopen/delete/directory growth/mirrors',flush=True)
 if __name__=='__main__':main()

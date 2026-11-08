@@ -1,7 +1,8 @@
 # pcf size audit
 
-Current modules with I$MakDir: **6,463 bytes (Level 2)** and **6,450 bytes
-(Level 1)**. Directory creation adds 254 bytes to each. The optimization
+Current modules with directory creation/removal: **6,855 bytes (Level 2)**
+and **6,844 bytes (Level 1)**. Directory creation added 254 bytes to each;
+empty-directory removal and in-use checks add another 392/394 bytes. The optimization
 breakdown below records the preceding files-only implementation.
 
 Measured 6809 Level 2 OS-9 modules, including header and CRC. This compares

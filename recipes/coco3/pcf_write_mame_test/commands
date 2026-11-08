@@ -18,6 +18,9 @@ deldir /dd/subdir
 echo PCFGUARDSEND
 dir /pc0
 pcfshare
+pcfrmdir
+makdir /pc0/empty
+del /dd/empty
 makdir /pc0/top/inner
 echo PCFNESTED>/pc0/top/inner/keep.txt
 chd /pc0/top/inner

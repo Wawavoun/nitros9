@@ -23,8 +23,8 @@ fatroot_swi_tap = space:install_read_tap(0xfff4, 0xfff4, 'fatroot-console', func
         if length > 0 and length < 16384 then
             local text = space:read_range(x, x + length - 1, 8)
             if call == 0x8c then text = text:match('^[^\r]*\r') or text end
-            if text:find('PCFGUARDSBEGIN',1,true) then guards=true end
-            if text:find('PCFGUARDSEND',1,true) then guards=false end
+            if text:find('PCFGUARDSBEGIN',1,true) or text:find('PCFRMDENYBEGIN',1,true) then guards=true end
+            if text:find('PCFGUARDSEND',1,true) or text:find('PCFRMDENYEND',1,true) then guards=false end
             console:write(text);console:flush()
         end
     end

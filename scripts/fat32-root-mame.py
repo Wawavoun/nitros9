@@ -40,7 +40,7 @@ def prepare(args):
     assert {'pcf','blkdrv'}<=module_names(boot,lowercase=False),'runtime module names must be lowercase'
     assert 'blkdev' not in names
     assert not names&{'rbf','rb1773','d0','sysgo','shell','grfdrv'},names
-    commands=COMMANDS+(('makdir','del','deldir','attr','dcheck','pwd','pxd','pcfshare') if args.write_test else ())
+    commands=COMMANDS+(('makdir','del','deldir','attr','dcheck','pwd','pxd','pcfshare','pcfrmdir') if args.write_test else ())
     for name in commands:shutil.copyfile(recipe/'.mods'/name,stage/'CMDS'/name.upper())
     shutil.copyfile(recipe/'.mods/sysgo_dd',stage/'SYSGO')
     (stage/'STARTUP').write_bytes((recipe/'startup').read_text().replace('\n','\r').encode())
@@ -117,6 +117,9 @@ def run(args):
         assert b'PCFWRITEDONE' in console
         assert b'PCFSHARE PASS: 13 parent/child checks' in console
         assert b'PCFSHARE FAIL' not in console
+        assert b'PCFRMDIR PASS: 14 parent/child checks' in console
+        assert b'PCFRMDIR FAIL' not in console
+        assert console.count(b'PCFRMDENYBEGIN')==8 and console.count(b'PCFRMDENYEND')==8
         writes=(logs/'vhd-writes.log').read_text().splitlines()
         assert writes and not any(line.startswith('GUARD ') for line in writes),'utility guard wrote to disk'
         with PyFatFS(str(media),read_only=True) as fs:
@@ -129,6 +132,7 @@ def run(args):
             assert set(fs.listdir('/SUBDIR'))=={'NEW.TXT','NEST.TXT','CHILD'}
             assert fs.isdir('/SUBDIR/CHILD') and fs.listdir('/SUBDIR/CHILD')==[]
             assert not fs.exists('/GONE.BIN')
+            assert not fs.exists('/RMTEST') and not fs.exists('/EMPTY')
             assert not fs.exists('/SHARE.TXT') and not fs.exists('/OTHER.TXT')
     else:
         assert errors==[203],('expected only write-mode rejection from copy',errors)
@@ -148,7 +152,9 @@ def run(args):
     (logs/'result.json').write_text(json.dumps({'passed':True,'resident':manifest['resident'],
         'loaded_files':list(manifest['records']),'floppy_sha256':hashes[0],'fat32_sha256':digest(media),'write_test':args.write_test,'reopen':args.reopen,'errors':errors,
         'non_rbf_rejections':errors.count(249) if args.write_test else 0,
+        'parent_child_rmdir_checks':14 if args.write_test and not args.reopen else 0,
         'parent_child_sharing_checks':13 if args.write_test and not args.reopen else 0},indent=2))
+    if args.write_test and not args.reopen:print('PASS: 14 parent/child directory-removal checks; no writes on rejected removals',flush=True)
     if args.write_test and not args.reopen:print('PASS: 13 parent/child sharing checks, independent read positions, SS.Lock rejected as unsupported',flush=True)
     if args.write_test and not args.reopen:print('PASS: PCF create/write/append/copy/delete; attr/dcheck/pxd/pwd/deldir rejected without disk writes; deldir preserves the full subtree',flush=True)
     if args.reopen:print('PASS: nested directories and file contents persist across a fresh MAME boot; image unchanged',flush=True)

@@ -920,11 +920,17 @@ DeleteImpl          pshs      x,y,u
                     pshs      a
                     lda       #READ.
                     sta       PD.MOD,y
-                    lbsr      OpenImpl
+                    lda       #3
+                    lbsr      OpenBegin
                     bcs       deletereturn@
                     ldu       PD.BUF,y
-                    lbsr      CanWriteFile
-                    bcs       deletefree@
+                    lda       F.Entry+11,u
+                    bita      #$10
+                    beq       deletefile@
+                    lbsr      RemovableDirectory
+                    bra       deletechecked@
+deletefile@         lbsr      CanWriteFile
+deletechecked@      bcs       deletefree@
                     lda       #WRITE.
                     lbsr      CheckSharing
                     bcs       deletefree@
@@ -1189,3 +1195,157 @@ EntryCluster        lda       F.Val+1,u
                     lda       F.Val+2,u
                     sta       27,x
                     rts
+
+
+* Reject the volume root, dot aliases, readonly/LFN entries, open directories,
+* and any process's data or execution directory before changing the medium.
+RemovableDirectory  lbsr      Writable
+                    lbcs      rmdirret@
+                    lda       F.Entry+11,u
+                    bita      #1
+                    lbne      AccessError
+                    tst       F.HasLFN,u
+                    lbne      AccessError
+                    lda       F.Name,u
+                    cmpa      #'.
+                    lbeq      AccessError
+                    leax      F.Start,u
+                    lbsr      LoadVal
+                    leax      F.Root,u
+                    lbsr      CompareVal
+                    lbeq      AccessError
+                    lbsr      DirectoryBusy
+                    lbcs      rmdirret@
+                    clr       F.WalkValid,u
+                    clra
+                    clrb
+                    std       F.Scan,u
+                    std       F.Scan+2,u
+emptyloop@          leax      F.Scan,u
+                    lbsr      LoadVal
+                    leax      F.Offset,u
+                    lbsr      StoreVal
+                    lbsr      Locate
+                    bcc       emptyslot@
+                    cmpb      #E$EOF
+                    beq       emptyok@
+                    coma
+                    bra       rmdirret@
+emptyslot@          lda       ,x
+                    beq       emptyok@
+                    cmpa      #$E5
+                    beq       emptynext@
+* Only exact '.' and '..' records in their standard slots may be ignored.
+                    cmpa      #'.
+                    bne       notempty@
+                    lda       11,x
+                    bita      #$10
+                    beq       notempty@
+                    ldd       F.Scan,u
+                    bne       notempty@
+                    ldd       F.Scan+2,u
+                    cmpd      #32
+                    bhi       notempty@
+                    leax      1,x
+                    ldb       #10
+                    tst       F.Scan+3,u
+                    beq       dotspaces@
+                    lda       ,x+
+                    cmpa      #'.
+                    bne       notempty@
+                    decb
+dotspaces@          lda       ,x+
+                    cmpa      #C$SPAC
+                    bne       notempty@
+                    decb
+                    bne       dotspaces@
+emptynext@          lbsr      ScanNext
+                    bcs       rmdirret@
+                    bra       emptyloop@
+notempty@           ldb       #E$DNE
+                    coma
+rmdirret@           rts
+emptyok@            clrb
+                    rts
+
+DirectoryBusy       pshs      x,y
+                    ldx       PD.DEV,y
+                    ldx       V$STAT,x
+                    ldx       BV.FMPaths,x
+busyopen@           cmpx      #0
+                    beq       busyprocess@
+                    pshs      u
+                    cmpx      ,s++
+                    beq       busynext@
+                    ldd       F.Base,u
+                    cmpd      F.Base,x
+                    bne       busynext@
+                    ldd       F.Base+2,u
+                    cmpd      F.Base+2,x
+                    bne       busynext@
+                    ldd       F.Start,u
+                    cmpd      F.Start,x
+                    bne       busynext@
+                    ldd       F.Start+2,u
+                    cmpd      F.Start+2,x
+                    beq       busyerror@
+busynext@           ldx       F.NextPath,x
+                    bra       busyopen@
+* Fork inherits these references without opening a path, so scan live process
+* descriptors as well as the open-path list. The volume lock excludes ChgDir.
+busyprocess@        lda       #1
+                    pshs      a
+busyid@             lda       ,s
+                    ifgt      Level-1
+                    os9       F$GProcP
+                    else
+                    ldx       <D.PrcDBT
+                    os9       F$Find64
+                    endc
+                    bcs       busyadvance@
+                    lda       P$State,y
+                    bita      #Dead
+                    bne       busyadvance@
+                    leax      P$DIO,y
+                    bsr       DirectoryRef
+                    bcs       busyfound@
+                    leax      P$DIO+6,y
+                    bsr       DirectoryRef
+                    bcs       busyfound@
+busyadvance@        inc       ,s
+                    bne       busyid@
+                    clrb
+busyfound@          leas      1,s
+                    puls      x,y,pc
+busyerror@          ldb       #E$Share
+                    coma
+                    puls      x,y,pc
+* X points to a six-byte device/cluster reference. Compare physical device
+* statics and partition base so /dd and /pc0 aliases cannot bypass protection.
+DirectoryRef        pshs      x,y
+                    ldd       2,x
+                    cmpd      F.Start,u
+                    bne       refok@
+                    ldd       4,x
+                    cmpd      F.Start+2,u
+                    bne       refok@
+                    ldx       ,x
+                    beq       refok@
+                    ldy       F.Owner,u
+                    ldy       PD.DEV,y
+                    ldd       V$FMGR,x
+                    cmpd      V$FMGR,y
+                    bne       refok@
+                    ldd       V$STAT,x
+                    cmpd      V$STAT,y
+                    bne       refok@
+                    ldx       V$DESC,x
+                    ldd       FT.Base,x
+                    cmpd      F.Base,u
+                    bne       refok@
+                    ldd       FT.Base+2,x
+                    cmpd      F.Base+2,u
+                    bne       refok@
+                    bra       busyerror@
+refok@              clrb
+                    puls      x,y,pc

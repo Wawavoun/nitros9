@@ -175,6 +175,10 @@ class FatMachine(blk.Machine):
                     c.user_stack_pointer.set(WORK);self.allocations.append(WORK);c.C=0
                 elif op==s['F$SRtMem']:
                     self.allocations.remove(c.user_stack_pointer.value);c.C=0
+                elif op in (s.get('F$GProcP',-1),s['F$Find64']):
+                    process=getattr(self,'processes',{1:0x600}).get(c.accu_a.value)
+                    if process is None:c.C=1
+                    else:c.index_y.set(process);c.C=0
                 elif op==s.get('F$LDABX',-1):
                     c.accu_a.set(self.byte(c.index_x.value))
                 elif op==s.get('F$Move',-1):
