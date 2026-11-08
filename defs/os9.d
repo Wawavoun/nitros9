@@ -390,6 +390,8 @@ SS.FSig             RMB       1                   New signal for temp locked fil
 * Rename within an open parent directory. X -> two zero-padded 30-byte
 * names (old, new), Y=60. Each name is 1..29 bytes. Requires parent WRITE.
 SS.Rename           EQU       $2D
+* Next directory entry: X=buffer, Y=RD.NameSize or RD.Size (readdir.d).
+SS.ReadDir          EQU       $2E
 SS.DSize            EQU       SS.ScSiz            Return disk size (RBF GetStat)
 SS.VarSect          EQU       SS.DStat            Variable Sector Size (RBF GetStat)
 
