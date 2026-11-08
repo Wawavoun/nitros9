@@ -90,6 +90,6 @@ All four Level 1/2 × 6809/6309 variants assembled. The Level 1/2 read and write
 CPU regression suites passed, including added tests for second-half data/FAT
 read failures, invalidation and retry, byte-for-byte metadata equivalence across
 SS.ReadDir and SS.FDInf, and full SS.FD clearing without caller-buffer overrun. The 6809 Level 2 writable-root MAME recipe passed
-boot, startup, file operations, all five utilities' `rbf only` rejections (deldir through both device aliases), 13 parent/child
+boot, startup, file operations, all five utilities' E$BTyp (249) rejections (deldir through both device aliases), 13 parent/child
 sharing checks, independent reader positions, and unsupported SS.Lock reporting.
 The post-test image passed `fsck_msdos -n`. The recorded video was not changed.

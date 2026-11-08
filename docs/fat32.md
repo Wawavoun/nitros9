@@ -232,7 +232,7 @@ append syntax is `echo SECOND>+/pc0/new.txt`. The runner independently
 reopens the resulting image and verifies exact file contents and deletion.
 
 `attr`, `dcheck`, `pxd`, `pwd`, and `deldir` check the device type before interpreting
-RBF metadata. On pcf they print `rbf only` and return E$BTyp (249). The MAME
+RBF metadata. On pcf they return E$BTyp (249) without an extra message. The MAME
 run requires exactly six such rejections (including `deldir /pc0/subdir` and
 `deldir /dd/subdir`) and monitors VHD writes throughout the rejection sequence,
 requiring none. Host checks verify that the directory, both files and their

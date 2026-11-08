@@ -9,16 +9,9 @@ RequireRBF          pshs      a,x,y,u
                     lda       ,s
                     cmpa      #DT.RBF
                     beq       rbfgok@
-                    leax      RBFOnlyMessage,pcr
-                    ldy       #RBFOnlyLength
-                    lda       #2
-                    os9       I$WritLn
                     ldb       #E$BTyp
                     coma
                     bra       rbfgret@
 rbfgok@             clrb
 rbfgret@            leas      32,s
                     puls      a,x,y,u,pc
-RBFOnlyMessage      fcc       /rbf only/
-                    fcb       C$CR
-RBFOnlyLength       equ       *-RBFOnlyMessage

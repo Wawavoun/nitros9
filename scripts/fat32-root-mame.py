@@ -103,7 +103,7 @@ def run(args):
     errors=[int(n) for n in (root/'errors.log').read_text().splitlines()]
     if args.write_test:
         assert errors==[249]*6,('expected six RBF-only rejections',errors)
-        assert console.count(b'rbf only')==6
+        assert b'rbf only' not in console,'redundant rejection message remains'
         assert b'PCFWRITEDONE' in console
         assert b'PCFSHARE PASS: 13 parent/child checks' in console
         assert b'PCFSHARE FAIL' not in console
@@ -134,7 +134,7 @@ def run(args):
         assert set(records)<=reads,f'file was not fully read from VHD: {name}'
     (root/'result.json').write_text(json.dumps({'passed':True,'resident':manifest['resident'],
         'loaded_files':list(manifest['records']),'floppy_sha256':hashes[0],'fat32_sha256':digest(media),'write_test':args.write_test,'errors':errors,
-        'rbf_only_rejections':console.count(b'rbf only') if args.write_test else 0,
+        'non_rbf_rejections':errors.count(249) if args.write_test else 0,
         'parent_child_sharing_checks':13 if args.write_test else 0},indent=2))
     if args.write_test:print('PASS: 13 parent/child sharing checks, independent read positions, SS.Lock rejected as unsupported',flush=True)
     if args.write_test:print('PASS: PCF create/write/append/copy/delete; attr/dcheck/pxd/pwd/deldir rejected without disk writes; deldir preserves the full subtree',flush=True)
