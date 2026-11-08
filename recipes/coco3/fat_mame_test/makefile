@@ -27,7 +27,7 @@ $(FAT_IMAGE): $(NITROS9DIR)/scripts/make-fat32-image.py
 	$(PYTHON) $< $@
 endif
 $(MODDIR)/llcocovhd: $(DEFSDIR)/blkdrv.d
-$(MODDIR)/pcf: $(NITROS9DIR)/level1/modules/fatwrite.asm $(DEFSDIR)/blkdrv.d $(DEFSDIR)/fat32.d $(DEFSDIR)/readdir.d
+$(MODDIR)/pcf: $(NITROS9DIR)/level1/modules/fatwrite.asm $(DEFSDIR)/blkdrv.d $(DEFSDIR)/pcf.d $(DEFSDIR)/readdir.d
 $(MODDIR)/blkdrv: $(DEFSDIR)/blkdrv.d
 $(MODDIR)/pc0: fatdesc.asm makefile | $(MODDIR)
 	$(AS) $(AFLAGS) $< $(ASOUT)$@ -DFATVHD=1 -DFATBase=0 -DFATLength=131072 -DFATPort=0xFF80

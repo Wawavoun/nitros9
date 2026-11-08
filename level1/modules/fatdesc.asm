@@ -1,7 +1,7 @@
 * FAT32/blkdrv descriptor template. Explicit partition offset and length.
                     use       defsfile
                     use       blkdrv.d
-                    use       fat32.d
+                    use       pcf.d
                     ifndef    FATBase
 FATBase             equ       0
                     endc

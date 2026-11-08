@@ -1,7 +1,7 @@
 * pcf - FAT32 file manager over blkdrv ABI 1.
                     use       defsfile
                     use       blkdrv.d
-                    use       fat32.d
+                    use       pcf.d
                     use       readdir.d
                     mod       eom,name,FlMgr+Objct,ReEnt+1,start,0
 name                fcs       /pcf/

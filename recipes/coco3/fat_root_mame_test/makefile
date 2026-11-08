@@ -23,7 +23,7 @@ ROOT_TEST = .fat-root
 ROOT_TEST_FLAGS ?=
 FAT_WRITE ?= 0
 
-$(MODDIR)/pcf: $(NITROS9DIR)/level1/modules/fatwrite.asm $(DEFSDIR)/blkdrv.d $(DEFSDIR)/fat32.d $(DEFSDIR)/readdir.d
+$(MODDIR)/pcf: $(NITROS9DIR)/level1/modules/fatwrite.asm $(DEFSDIR)/blkdrv.d $(DEFSDIR)/pcf.d $(DEFSDIR)/readdir.d
 $(MODDIR)/blkdrv $(MODDIR)/llcocovhd: $(DEFSDIR)/blkdrv.d
 $(MODDIR)/dd_fat: fatdesc.asm makefile | $(MODDIR)
 	$(AS) $(AFLAGS) $< $(ASOUT)$@ -DDD=1 -DFATVHD=1 -DFATBase=0 -DFATLength=131072 -DFATPort=0xFF80 -DFATWrite=$(FAT_WRITE)
