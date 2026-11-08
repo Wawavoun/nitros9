@@ -1,5 +1,5 @@
--- commands is supplied by fat32-mame.py. Drive the keyboard matrix slowly
--- enough for CoWin's scanner; natural-keyboard pulses can lose characters.
+-- commands is supplied by fat32-mame.py. Keep reliable CoWin key timing.
+-- The recording can accelerate typing while retaining normal-speed results.
 emu.keypost('DOS\n')
 local keys = {}
 local shiftkey
@@ -37,7 +37,7 @@ emu.register_frame_done(function()
     local line = commands[index]
     if character > #line then
         index, character = index + 1, 1
-        ready = frames + 120
+        ready = frames + 100
         return
     end
     if character == 1 then

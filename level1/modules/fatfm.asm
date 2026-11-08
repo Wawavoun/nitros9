@@ -1,10 +1,10 @@
-* FAT - read-only FAT32 file manager over BlkDev ABI 1.
+* fatfm - read-only FAT32 file manager over BlkDev ABI 1.
                     use       defsfile
                     use       blkdev.d
                     use       fat32.d
                     use       readdir.d
                     mod       eom,name,FlMgr+Objct,ReEnt+1,start,0
-name                fcs       /FAT/
+name                fcs       /fatfm/
                     fcb       1
 start               lbra      ReadOnly
                     lbra      Open

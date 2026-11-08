@@ -22,16 +22,20 @@ FATPort             equ       $FE90
                     fdb       FATPort             BC.Port
                     fcb       0,0                 unit, flags
                     fdb       0,0                 RAM base, blocks (unused)
+                    ifne      FATVHD
+                    fdb       (FATBase+FATLength-1)/65536,(FATBase+FATLength-1)&$FFFF
+                    else
                     fdb       0,0                 RAM sparse base (unused)
+                    endc
                     fdb       $FFFF               failure injection disabled
                     fdb       FATBase/65536,FATBase&$FFFF
                     fdb       FATLength/65536,FATLength&$FFFF
 name                fcs       /fat0/
-manager             fcs       /FAT/
+manager             fcs       /fatfm/
 driver              fcs       /BlkDev/
 backend
-                    ifne      FATFixture
-                    fcs       /llfatfixture/
+                    ifne      FATVHD
+                    fcs       /llcocovhd/
                     else
                     fcs       /llwbsdblk/
                     endc

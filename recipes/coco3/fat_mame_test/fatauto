@@ -7,7 +7,8 @@ dir -e /fat0 >/dd/fatdire
 list /fat0/hello.txt
 list /fat0/hello.txt >/dd/fathello
 copy /fat0/frag.bin /dd/fatfrag
-cmp /fat0/frag.bin /dd/fatfrag
+cmp /fat0/frag.bin /dd/fatfrag >/dd/fatcmp
+list /dd/fatcmp
 chd /fat0/subdir
 list nest.txt
 list nest.txt >/dd/fatnest

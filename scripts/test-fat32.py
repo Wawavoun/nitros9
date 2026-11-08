@@ -163,7 +163,8 @@ class FatMachine(blk.Machine):
         c,s=self.c,self.s
         c.index_x.set(0x1717);c.index_y.set(blk.PD);c.user_stack_pointer.set(REGS)
         c.system_stack_pointer.set(0x7000);self.word(0x7000,0x1fff)
-        c.program_counter.set(FAT+self.fs[name]);c.set_cc(cc)
+        entry=self.fs['start']+name*3 if isinstance(name,int) else self.fs[name]
+        c.program_counter.set(FAT+entry);c.set_cc(cc)
         for _ in range(3000000):
             pc=c.program_counter.value
             if pc==0x1fff:break
@@ -193,7 +194,7 @@ class FatMachine(blk.Machine):
 def build(tmp,level,v):
     modules=blk.assemble(tmp,level)
     modules['fixture']=assemble_source(tmp,level,v.fixture(tmp),'llfatfixture')
-    fat=assemble_source(tmp,level,ROOT/'level1/modules/fat.asm','fat')
+    fat=assemble_source(tmp,level,ROOT/'level1/modules/fatfm.asm','fatfm')
     return modules,fat
 
 
@@ -201,7 +202,7 @@ def test(tmp,level):
     v=Volume()
     modules,fat=build(tmp,level,v)
     p=FatMachine(modules,fat,v)
-    print('FAT Level',level,'module',len(fat[0]),'bytes',flush=True)
+    print('fatfm Level',level,'module',len(fat[0]),'bytes',flush=True)
     def ok(name,**kw):
         r=p.call(name,**kw)
         assert not r[0],(name,r)
@@ -402,6 +403,94 @@ def extended_tests(tmp,level):
     p.call('Close')
     print('  geometry/active FAT, high LBA, corruption/cycles, EOF, cwd rollback and move failure passed',flush=True)
 
+def boundary_tests(tmp,level):
+    def machine(volume):
+        modules,fat=build(tmp,level,volume)
+        assert fat[0][fat[1]['name']:fat[1]['name']+5]==b'fatf\xed'
+        return FatMachine(modules,fat,volume)
+    def ok(p,name,**kw):
+        result=p.call(name,**kw)
+        assert not result[0],(name,kw,result)
+        return result
+    def error(p,name,code,**kw):
+        result=p.call(name,**kw)
+        assert result[:2]==(1,p.s[code]),(name,kw,result,code)
+
+    # Enumeration crosses both sector and noncontiguous cluster boundaries.
+    for spc in (1,2):
+        v=Volume(spc=spc);capacity=16*spc;rows=[];expected=[]
+        for i in range(capacity+5):
+            name=f'F{i:07d}.TXT';size=(i+1)*7
+            row=v.entry(name,10,size)
+            if i%11==4:row=bytes([0xe5])+row[1:]
+            elif i%11==6:row=v.entry('LFNSLOT',0,0,0x0f)
+            elif i%11==8:row=v.entry('VOLUME',0,0,8)
+            else:expected.append((i,name,size))
+            rows.append(row)
+        v.fat(2,400);v.fat(400,0x0fffffff)
+        v.put(2,b''.join(rows[:capacity]));v.put(400,b''.join(rows[capacity:]))
+        p=machine(v)
+        for count in (32,45):
+            ok(p,'Open',mode=0x81,path='/fat0')
+            for slot,name,size in expected:
+                ok(p,'GetStat',status=p.s['SS.ReadDir'],count=count)
+                record=p.data(OUTPUT,count)
+                assert record[:len(name)]==name[:-1].encode()+bytes([ord(name[-1])|128])
+                assert int.from_bytes(record[29:32],'big')==slot+1
+                if count==45:assert int.from_bytes(record[41:45],'big')==size
+            error(p,'GetStat','E$EOF',status=p.s['SS.ReadDir'],count=count)
+            # Rewind directly into the second cluster, then use the legacy FD view.
+            slot,name,size=next(e for e in expected if e[0]>=capacity)
+            ok(p,'Seek',position=64+slot*32)
+            ok(p,'GetStat',status=p.s['SS.ReadDir'],count=count)
+            assert p.data(OUTPUT,len(name))==name[:-1].encode()+bytes([ord(name[-1])|128])
+            ok(p,'GetStat',status=p.s['SS.FDInf'],cookie=slot+1,count=16)
+            assert int.from_bytes(p.data(OUTPUT+9,4),'big')==size
+            error(p,'GetStat','E$IllArg',status=p.s['SS.FDInf'],cookie=capacity+6,count=16)
+            ok(p,'Close')
+            assert p.allocations==[blk.STATE]
+        _,name,size=expected[-1]
+        ok(p,'Open',mode=1,path='/fat0/'+name.lower())
+        result=ok(p,'Read',count=size+10)
+        assert result[2]==size and p.data(OUTPUT,size)==v.fragment[:size]
+        ok(p,'Close')
+
+    # CR at the final byte of a sector/cluster, plus an unterminated last line.
+    v=Volume();payload=b'A'*511+b'\r'+b'B'*511+b'\r'+b'end'
+    v.put(10,payload[:512]);v.put(300,payload[512:1024]);v.put(11,payload[1024:])
+    v.sectors[v.data][32:64]=v.entry('FRAG.BIN',10,len(payload))
+    p=machine(v);ok(p,'Open',mode=1,path='/fat0/frag.bin')
+    for line in (payload[:512],payload[512:1024],b'end'):
+        result=ok(p,'ReadLn',count=2000)
+        assert result[2]==len(line) and p.data(OUTPUT,len(line))==line
+    error(p,'ReadLn','E$EOF',count=1)
+    for pos in (510,511,512,1023,1024):
+        ok(p,'Seek',position=pos)
+        ok(p,'ReadLn',count=0)
+        result=ok(p,'ReadLn',count=2000)
+        want=payload[pos:].split(b'\r')[0]
+        if b'\r' in payload[pos:]:want+=b'\r'
+        assert result[2]==len(want) and p.data(OUTPUT,len(want))==want
+    # Dispatch every mutating FM vector, not just its shared error routine.
+    for vector in (0,2,4,7,9,11):
+        error(p,vector,'E$WP',count=32,status=p.s['SS.Rename'])
+    ok(p,'Close')
+
+    # A two-cluster directory cycle is rejected and releases its workspace.
+    v=Volume();v.fat(2,400);v.fat(400,2)
+    for cluster in (2,400):v.put(cluster,v.entry('FILL',3,1)*16)
+    p=machine(v);error(p,'Open','E$BTyp',mode=0x81,path='/fat0')
+    assert p.allocations==[blk.STATE]
+    # Repeated opens/closes and descriptor span failure must not leak memory.
+    v=Volume();p=machine(v)
+    for _ in range(8):
+        ok(p,'Open',mode=1,path='/fat0/hello.txt');ok(p,'Close')
+        assert p.allocations==[blk.STATE]
+    p.long(blk.DESC+p.fs['FT.Length'],v.total-1)
+    error(p,'Open','E$BTyp',mode=1,path='/fat0/hello.txt')
+    assert p.allocations==[blk.STATE]
+    print('  directory sector/cluster boundaries, metadata/cookies, line boundaries, all write vectors, two-node cycles and repeated cleanup passed',flush=True)
+
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
@@ -414,3 +503,4 @@ if __name__=='__main__':
             for level in (1,2):
                 test(Path(d),level)
                 extended_tests(Path(d),level)
+                boundary_tests(Path(d),level)

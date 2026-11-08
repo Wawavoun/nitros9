@@ -48,6 +48,7 @@ class Machine:
         self.m.load(DRIVER, modules['blkdev'][0])
         self.m.load(BACKEND, modules[backend][0])
         self.allocations = []
+        self.allocation_sizes = {}
         self.unlinks = 0
         self.fail_link = False
         self.fail_alloc = False
@@ -116,12 +117,14 @@ class Machine:
                         c.accu_b.set(s['E$MemFul'])
                     else:
                         c.user_stack_pointer.set(STATE)
-                        c.accu_d.set(256)
+                        size=(c.accu_d.value+255)&0xff00
+                        c.accu_d.set(size)
+                        self.allocation_sizes[STATE]=size
                         self.allocations.append(STATE)
                         c.C = 0
                 elif op == s['F$SRtMem']:
                     assert c.user_stack_pointer.value in self.allocations
-                    assert c.accu_d.value == 256
+                    assert c.accu_d.value == self.allocation_sizes.pop(c.user_stack_pointer.value)
                     self.allocations.remove(c.user_stack_pointer.value)
                     c.C = 0
                 elif op == s['F$UnLink']:

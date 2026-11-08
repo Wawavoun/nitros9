@@ -1,4 +1,4 @@
-# Local floppy OS, read-only sparse FAT32 fixture through the real FAT/BlkDev stack.
+# Local floppy OS plus an external FAT32 image on the MAME VHD device.
 override NITROS9DIR := $(abspath ../../..)
 LEVEL = 2
 TERM_COLS = 80
@@ -9,7 +9,7 @@ CMDS_BASE = grfdrv shell mdir dir list copy cmp
 RBF = rbf.mn rb1773.dr ddd0_$(TRACKS)d.dd d0_$(TRACKS)d.dd
 SCF = scf.mn vtio.dr co3hires.sb snddrv_cc3.sb joydrv_joy.sb $(TERM_IO) $(TERM_WIN_DT) w.dw
 PIPE =
-BOOTMODS_EXTRA = fat blkdev llfatfixture fat0
+BOOTMODS_EXTRA = fatfm blkdev llcocovhd fat0
 RECIPE_DEPS = fatauto
 RECIPE_INSTALL = $(CPL) fatauto $(1),fatauto
 include ../coco3.mak
@@ -20,14 +20,14 @@ MAME_ROMPATH ?= $(HOME)/Documents/Resources/Computing/mame/roms
 TEST_SECONDS ?= 400
 MAME_VIDEO ?=
 
-$(MODDIR)/fatfixture-data.asm: $(NITROS9DIR)/scripts/test-fat32.py $(NITROS9DIR)/scripts/fixtures/llfatfixture.asm | $(MODDIR)
-	$(PYTHON) $(NITROS9DIR)/scripts/test-fat32.py --fixture-directory $(MODDIR)
-$(MODDIR)/llfatfixture: $(MODDIR)/fatfixture-data.asm
-	$(AS) $(AFLAGS) -I$(MODDIR) $(MODDIR)/llfatfixture.asm $(ASOUT)$@
-$(MODDIR)/fat: $(DEFSDIR)/blkdev.d $(DEFSDIR)/fat32.d $(DEFSDIR)/readdir.d
+FAT_IMAGE = .fat-test/fat32.vhd
+$(FAT_IMAGE): $(NITROS9DIR)/scripts/make-fat32-image.py
+	$(PYTHON) $< $@
+$(MODDIR)/llcocovhd: $(DEFSDIR)/blkdev.d
+$(MODDIR)/fatfm: $(DEFSDIR)/blkdev.d $(DEFSDIR)/fat32.d $(DEFSDIR)/readdir.d
 $(MODDIR)/blkdev: $(DEFSDIR)/blkdev.d
-$(MODDIR)/fat0: fatdesc.asm | $(MODDIR)
-	$(AS) $(AFLAGS) $< $(ASOUT)$@ -DFATFixture=1 -DFATBase=2048 -DFATLength=70000 -DFATPort=0
-check: $(DSKIMAGE)
-	$(PYTHON) $(NITROS9DIR)/scripts/fat32-mame.py --disk $(DSKIMAGE) --mame "$(MAME_BINARY)" --rompath "$(MAME_ROMPATH)" --seconds $(TEST_SECONDS) $(if $(MAME_VIDEO),--video "$(MAME_VIDEO)")
+$(MODDIR)/fat0: fatdesc.asm makefile | $(MODDIR)
+	$(AS) $(AFLAGS) $< $(ASOUT)$@ -DFATVHD=1 -DFATBase=0 -DFATLength=131072 -DFATPort=0xFF80
+check: $(DSKIMAGE) $(FAT_IMAGE)
+	$(PYTHON) $(NITROS9DIR)/scripts/fat32-mame.py --disk $(DSKIMAGE) --fat-image $(FAT_IMAGE) --mame "$(MAME_BINARY)" --rompath "$(MAME_ROMPATH)" --seconds $(TEST_SECONDS) $(if $(MAME_VIDEO),--video "$(MAME_VIDEO)")
 .PHONY: check
