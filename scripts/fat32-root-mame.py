@@ -2,6 +2,7 @@
 """Build and verify a FAT32 /DD boot with no resident floppy driver."""
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,10 @@ import sys
 from pyfatfs.PyFatFS import PyFatFS
 
 ROOT=Path(__file__).resolve().parents[1]
+spec=importlib.util.spec_from_file_location('pcf_random',ROOT/'scripts/pcf-random.py')
+random_test=importlib.util.module_from_spec(spec);spec.loader.exec_module(random_test)
+spec=importlib.util.spec_from_file_location('fat_check',ROOT/'scripts/check-fat-image.py')
+fat_check=importlib.util.module_from_spec(spec);spec.loader.exec_module(fat_check)
 COMMANDS=('grfdrv','shell','mdir','dir','list','copy','cmp')
 
 def module_names(data, lowercase=True):
@@ -32,6 +37,7 @@ def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 def prepare(args):
     recipe=args.recipe.resolve();root=args.root.resolve()
     root.mkdir(parents=True,exist_ok=True)
+    if args.write_test:random_test.prepare(root,args.seed,args.steps)
     stage=root/'system'
     if stage.exists():shutil.rmtree(stage)
     (stage/'CMDS').mkdir(parents=True);(stage/'SYS').mkdir()
@@ -79,6 +85,8 @@ def run(args):
     else:shutil.copyfile(root/'fat32-root.vhd',media)
     hashes=(digest(disk),digest(media))
     commands=(recipe/('commands-reopen' if args.reopen else 'commands')).read_text().splitlines()
+    if args.write_test and not args.reopen:
+        commands=commands[:-1]+(root/'random-commands').read_text().splitlines()+commands[-1:]
     lua='commands={\n'+''.join(' '+json.dumps(c+'\n')+',\n' for c in commands if c)+'}\n'
     lua+='snapshot_path='+json.dumps(str(logs/'screen.png'))+'\n'
     lua+='console_path='+json.dumps(str(logs/'console.log'))+'\n'
@@ -88,17 +96,20 @@ def run(args):
     lua+=(ROOT/'scripts/fat32-root-mame.lua').read_text()+'\n'
     lua+=(ROOT/'scripts/fat32-mame.lua').read_text()
     (logs/'run.lua').write_text(lua)
+    # Budget for the generated key stream as well as boot and final I/O.
+    seconds=max(args.seconds,120+sum((len(c)+1)*24+100 for c in commands)//60)
     cmd=[args.mame,'coco3','-rompath',args.rompath,'-skip_gameinfo','-cfg_directory',str(root/'cfg'),
         '-nvram_directory',str(root/'nvram'),'-snapshot_directory',str(root/'snap'),'-ram','512K',
         '-ext','fdc,bios=v11','-ext:fdc:wd17xx:0','525qd','-flop1',str(disk),'-hard1',str(media),
-        '-autoboot_delay','3','-autoboot_script',str(logs/'run.lua'),'-seconds_to_run',str(args.seconds),
-        '-video','none','-sound','none','-nothrottle']
+        '-autoboot_delay','3','-autoboot_script',str(logs/'run.lua'),'-seconds_to_run',str(seconds),
+        '-sound','none','-nothrottle']
+    cmd+=['-window'] if args.visible else ['-video','none']
     if args.video:
         args.video.parent.mkdir(parents=True,exist_ok=True)
         cmd+=['-aviwrite',str(args.video.resolve()),'-snapsize','640x480']
     print('Booting with FAT32 /DD and kernel-track-only floppy:',root,flush=True)
     with (logs/'mame.log').open('w') as log:
-        subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=args.seconds+60)
+        subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=seconds+60)
     assert hashes[0]==digest(disk),'bootstrap floppy changed'
     if args.reopen or not args.write_test:assert hashes[1]==digest(media),'read-only FAT32 image changed'
     console=(logs/'console.log').read_bytes()
@@ -111,9 +122,11 @@ def run(args):
         assert b'PCFPERSISTDONE' in console and b'PCFNESTED\r' in console
         assert b'KEEP.TXT' in console and b'INNER' in console
         assert not (logs/'vhd-writes.log').read_text(),'reopen checks wrote to disk'
+        with PyFatFS(str(media),read_only=True) as fs:random_test.verify(fs,root)
     elif args.write_test:
         assert errors==[249]*4+[1],('expected four RBF-only rejections and deldir quit',errors)
         assert b'rbf only' not in console,'redundant rejection message remains'
+        assert f'RANDOMPASS{args.seed}'.encode() in console
         assert b'PCFWRITEDONE' in console and b'PCFRECURSEDONE' in console
         assert console.count(b'List directory, delete directory, or quit ?')==6
         assert console.count(b'PCFDELDENYBEGIN')==1 and console.count(b'PCFDELDENYEND')==1
@@ -135,6 +148,7 @@ def run(args):
             assert fs.readbytes('/SUBDIR/NEST.TXT')==b'NESTED\r'
             assert set(fs.listdir('/SUBDIR'))=={'NEW.TXT','NEST.TXT','CHILD'}
             assert fs.isdir('/SUBDIR/CHILD') and fs.listdir('/SUBDIR/CHILD')==[]
+            random_test.verify(fs,root)
             assert not fs.exists('/TREE') and not fs.exists('/SINGLE.TXT')
             assert not fs.exists('/GONE.BIN')
             assert not fs.exists('/RMTEST') and not fs.exists('/EMPTY')
@@ -154,15 +168,20 @@ def run(args):
     for name,records in manifest['records'].items():
         if args.reopen and name not in ('/OS9BOOT','/SYSGO','/STARTUP','/CMDS/GRFDRV','/CMDS/SHELL','/CMDS/MDIR','/CMDS/DIR','/CMDS/LIST','/CMDS/CMP'):continue
         assert set(records)<=reads,f'file was not fully read from VHD: {name}'
+    if args.write_test:fat_check.check(media,logs/'fsck.log',args.fsck)
     (logs/'result.json').write_text(json.dumps({'passed':True,'resident':manifest['resident'],
         'loaded_files':list(manifest['records']),'floppy_sha256':hashes[0],'fat32_sha256':digest(media),'write_test':args.write_test,'reopen':args.reopen,'errors':errors,
         'non_rbf_rejections':errors.count(249) if args.write_test else 0,
         'recursive_deldir':bool(args.write_test),
+        'fat_integrity_checked':bool(args.write_test),
+        'random_seed':args.seed if args.write_test else None,
+        'random_operations':args.steps if args.write_test and not args.reopen else 0,
         'parent_child_rmdir_checks':14 if args.write_test and not args.reopen else 0,
         'parent_child_sharing_checks':13 if args.write_test and not args.reopen else 0},indent=2))
     if args.write_test and not args.reopen:print('PASS: 14 parent/child directory-removal checks; no writes on rejected removals',flush=True)
     if args.write_test and not args.reopen:print('PASS: 13 parent/child sharing checks, independent read positions, SS.Lock rejected as unsupported',flush=True)
     if args.write_test and not args.reopen:print('PASS: PCF create/write/append/copy/delete; recursive deldir removes nested files and empty directories; attr/dcheck/pxd/pwd rejected without disk writes',flush=True)
+    if args.write_test and not args.reopen:print(f'PASS: {args.steps} randomized operations (seed {args.seed}) match the independent host reference',flush=True)
     if args.reopen:print('PASS: nested directories and file contents persist across a fresh MAME boot; image unchanged',flush=True)
     print('PASS: FAT32 OS9Boot + /DD, disk-loaded SysGo/shell/GrfDrv/commands, startup and cmp; bootstrap unchanged',flush=True)
 
@@ -174,6 +193,10 @@ def main():
     p.add_argument('--write-test',action='store_true')
     p.add_argument('--reopen',action='store_true',help='Boot the previous writable run image without resetting it')
     p.add_argument('--video',type=Path)
+    p.add_argument('--fsck',default=fat_check.default_checker(),help='FAT checker executable (called with -n)')
+    p.add_argument('--visible',action='store_true')
+    p.add_argument('--seed',type=int,default=20261108)
+    p.add_argument('--steps',type=int,default=120)
     args=p.parse_args();(prepare if args.action=='prepare' else run)(args)
 
 if __name__=='__main__':main()

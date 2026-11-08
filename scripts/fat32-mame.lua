@@ -37,7 +37,7 @@ emu.register_frame_done(function()
     local line = commands[index]
     if character > #line then
         index, character = index + 1, 1
-        ready = frames + 100
+        ready = frames + (command_pause or 100)
         return
     end
     if character == 1 then

@@ -358,3 +358,9 @@ reads those surviving files and leaves the image hash unchanged.
 for both OS levels with syscall peers. It checks maximum-length names, RBF's
 ATTR path, regular-file deletion, and propagation of child and enumeration
 errors. The updated command requires SS.ReadDir support in the file manager.
+
+## Local demonstrations and randomized regressions
+
+See [Running the PCF and RBF regressions](pcf-testing.md) for recipe `demo`,
+`demo-all`, `check-all`, and seeded `check-random` targets, dependencies, and
+the screenshots, replay traces, and host-reference results they save.
