@@ -227,7 +227,7 @@ make -C recipes/coco3/pcf_write_mame_test check PYTHON=/path/to/python \
 ```
 
 The 80-column test runs `mdir` at startup, ejects the bootstrap floppy, then
-creates and appends text, copies and compares a fragmented binary file,
+runs a disk-resident script that creates and appends text, copies and compares a fragmented binary file,
 deletes a copy, and creates a file in an existing subdirectory. Shell+
 append syntax is `echo SECOND>+/pc0/new.txt`. The runner independently
 reopens the resulting image and verifies exact file contents and deletion.

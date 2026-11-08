@@ -32,8 +32,36 @@ on Linux, use `FAT_CHECK=fsck.fat`). It is required for FAT32 test success.
 The default ROM directory is `~/Documents/Resources/Computing/mame/roms`.
 Close a MAME window early to abort that run; incomplete runs fail verification.
 Each finished window closes automatically, and the terminal prints PASS only
-after the host-side checks succeed. RBF deliberately waits longer between
-commands because keys sent during floppy HALT transfers can be lost.
+after the host-side checks succeed. The only emulated keyboard input is `DOS`
+to boot. All test commands run from disk through the normal OS-9 shell; Lua
+observes output and stops MAME after the completion marker and a short settling
+interval. There is no character injection or inter-command keyboard delay.
+
+## Disk-resident scripts and interactive answers
+
+Preparation installs `TEST.CMD` and adds `shell /dd/test.cmd` to startup.
+The writable FAT32 startup selects `REOPEN.CMD` when `/dd/testdone` exists;
+the first script creates that file at the end of its operations. This lets
+the second boot select the persistence checks without host edits to the image.
+The second boot must still leave the entire image hash unchanged.
+
+Both directory-removal tests use ordinary input redirection:
+
+```text
+deldir /pc0/tree </dd/cancel.in
+deldir /dd/tree </dd/delete.in
+```
+
+`CANCEL.IN` contains `l`, `y`, `q`; `DELETE.IN` contains four `d` responses,
+with OS-9 carriage-return line endings. Recursive children inherit the answer
+path and consume subsequent lines normally. The RBF test uses `/dd/tree` for
+both calls. The generated scripts print numbered `RUN` progress lines and
+use `-x` so expected rejection/quit cases do not abort execution. Host checks
+still require the exact expected errors, file contents, and integrity results;
+a guest completion message alone does not mark a test as passing.
+
+The FAT32 read trace must include the selected script and, on the first
+writable boot, both answer files. `REOPEN.CMD` is checked on the second boot.
 
 ## Randomized coverage and replay
 
@@ -69,6 +97,7 @@ Paths below are relative to each recipe directory:
 | Recipe/output | Evidence |
 | --- | --- |
 | `pcf_write_mame_test/.fat-root/` | `result.json`, `screen.png`, `console.txt`, `errors.log`, `fsck.log`, disk read/write traces |
+| `.fat-root/system/` | Installed `STARTUP`, `TEST.CMD`, `REOPEN.CMD`, and answer files |
 | `.fat-root/reference/` | Independently generated expected files and directories |
 | `.fat-root/random-trace.json` | Seed and ordered guest operations |
 | `.fat-root/random-verified.json` | Verified file sizes and SHA-256 hashes |

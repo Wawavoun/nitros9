@@ -25,6 +25,7 @@ fatroot_swi_tap = space:install_read_tap(0xfff4, 0xfff4, 'fatroot-console', func
             if call == 0x8c then text = text:match('^[^\r]*\r') or text end
             if text:find('PCFGUARDSBEGIN',1,true) or text:find('PCFRMDENYBEGIN',1,true) or text:find('PCFDELDENYBEGIN',1,true) then guards=true end
             if text:find('PCFGUARDSEND',1,true) or text:find('PCFRMDENYEND',1,true) or text:find('PCFDELDENYEND',1,true) then guards=false end
+            if completion_marker and text:gsub('[\r\n]+$','') == completion_marker then script_finished = true end
             console:write(text);console:flush()
         end
     end
@@ -34,17 +35,18 @@ local reg = {0, 0, 0}
 fatroot_vhd_tap = space:install_write_tap(0xff80, 0xff83, 'fatroot-vhd', function(address, value)
     if address < 0xff83 then reg[address-0xff80+1] = value
     elseif value == 0 then
+        fatroot_vhd_seen = true
         reads:write(string.format('%d\n',reg[1]*65536+reg[2]*256+reg[3]));reads:flush()
     elseif value == 1 then
         writes:write((guards and 'GUARD ' or '')..string.format('%d\n',reg[1]*65536+reg[2]*256+reg[3]));writes:flush()
     end
 end)
 fatroot_stop = emu.add_machine_stop_notifier(function() console:close();reads:close();errors:close();writes:close() end)
--- Eject the bootstrap floppy before any interactive checks run.
-local frames = 0
+-- Eject after the booter starts reading VHD; the floppy kernel track is loaded.
+local ejected = false
 emu.register_frame_done(function()
-    frames = frames + 1
-    if frames == 600 then
+    if eject_bootstrap and fatroot_vhd_seen and not ejected then
+        ejected = true
         local found = false
         for _, image in pairs(manager.machine.images) do
             if image.filename and image.filename:match('bootstrap%.dsk$') then

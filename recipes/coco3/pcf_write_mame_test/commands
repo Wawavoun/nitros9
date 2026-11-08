@@ -32,19 +32,12 @@ echo ROOTFILE>/pc0/tree/root.txt
 echo AFILE>/pc0/tree/a/a.txt
 echo BFILE>/pc0/tree/a/b/b.txt
 echo PCFDELDENYBEGIN
-deldir /pc0/tree
-l
-y
-q
+deldir /pc0/tree </dd/cancel.in
 echo PCFDELDENYEND
 list /pc0/tree/root.txt
 list /pc0/tree/a/a.txt
 list /pc0/tree/a/b/b.txt
-deldir /dd/tree
-d
-d
-d
-d
+deldir /dd/tree </dd/delete.in
 echo SINGLE>/pc0/single.txt
 deldir /pc0/single.txt
 dir /pc0

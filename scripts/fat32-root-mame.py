@@ -17,6 +17,8 @@ spec=importlib.util.spec_from_file_location('pcf_random',ROOT/'scripts/pcf-rando
 random_test=importlib.util.module_from_spec(spec);spec.loader.exec_module(random_test)
 spec=importlib.util.spec_from_file_location('fat_check',ROOT/'scripts/check-fat-image.py')
 fat_check=importlib.util.module_from_spec(spec);spec.loader.exec_module(fat_check)
+spec=importlib.util.spec_from_file_location('disk_script',ROOT/'scripts/mame-script.py')
+disk_script=importlib.util.module_from_spec(spec);spec.loader.exec_module(disk_script)
 COMMANDS=('grfdrv','shell','mdir','dir','list','copy','cmp')
 
 def module_names(data, lowercase=True):
@@ -49,7 +51,18 @@ def prepare(args):
     commands=COMMANDS+(('makdir','del','deldir','attr','dcheck','pwd','pxd','pcfshare','pcfrmdir') if args.write_test else ())
     for name in commands:shutil.copyfile(recipe/'.mods'/name,stage/'CMDS'/name.upper())
     shutil.copyfile(recipe/'.mods/sysgo_dd',stage/'SYSGO')
-    (stage/'STARTUP').write_bytes((recipe/'startup').read_text().replace('\n','\r').encode())
+    lines=(recipe/'commands').read_text().splitlines()
+    startup=(recipe/'startup').read_text()
+    script_names=['/TEST.CMD']
+    if args.write_test:
+        lines=lines[:-1]+(root/'random-commands').read_text().splitlines()+['echo DONE>/dd/testdone']+lines[-1:]
+        disk_script.answers(stage)
+        (stage/'REOPEN.CMD').write_bytes(disk_script.script((recipe/'commands-reopen').read_text().splitlines()))
+        startup+='if -r /dd/testdone\nshell /dd/reopen.cmd\nelse\nshell /dd/test.cmd\nendif\n'
+        script_names+=['/REOPEN.CMD','/CANCEL.IN','/DELETE.IN']
+    else:startup+='shell /dd/test.cmd\n'
+    (stage/'TEST.CMD').write_bytes(disk_script.script(lines))
+    (stage/'STARTUP').write_bytes(startup.replace('\n','\r').encode())
     for name in ('stdfonts','stdptrs','errmsg','helpmsg','password','motd'):
         source=recipe/'.sys'/name
         if source.exists():shutil.copyfile(source,stage/'SYS'/name.upper())
@@ -65,7 +78,7 @@ def prepare(args):
     spc=bpb[13];data=int.from_bytes(bpb[14:16],'little')+bpb[16]*int.from_bytes(bpb[36:40],'little')
     records={}
     with PyFatFS(str(image),read_only=True) as fs:
-        for name in ('/OS9BOOT','/SYSGO','/STARTUP',*(f'/CMDS/{n.upper()}' for n in commands)):
+        for name in ('/OS9BOOT','/SYSGO','/STARTUP',*script_names,*(f'/CMDS/{n.upper()}' for n in commands)):
             entry=fs._get_dir_entry(name)
             chain=list(fs.fs.get_cluster_chain(entry.get_cluster()))
             count=(len(fs.readbytes(name))+255)//256
@@ -84,20 +97,17 @@ def run(args):
         assert args.write_test and media.exists(),'reopen requires an existing writable-test image'
     else:shutil.copyfile(root/'fat32-root.vhd',media)
     hashes=(digest(disk),digest(media))
-    commands=(recipe/('commands-reopen' if args.reopen else 'commands')).read_text().splitlines()
-    if args.write_test and not args.reopen:
-        commands=commands[:-1]+(root/'random-commands').read_text().splitlines()+commands[-1:]
-    lua='commands={\n'+''.join(' '+json.dumps(c+'\n')+',\n' for c in commands if c)+'}\n'
+    marker='PCFPERSISTDONE' if args.reopen else ('PCFWRITEDONE' if args.write_test else 'FATROOTDONE')
+    lua='eject_bootstrap=true\ncompletion_marker='+json.dumps(marker)+'\n'
     lua+='snapshot_path='+json.dumps(str(logs/'screen.png'))+'\n'
     lua+='console_path='+json.dumps(str(logs/'console.log'))+'\n'
     lua+='writes_path='+json.dumps(str(logs/'vhd-writes.log'))+'\n'
     lua+='errors_path='+json.dumps(str(logs/'errors.log'))+'\n'
     lua+='reads_path='+json.dumps(str(logs/'vhd-reads.log'))+'\n'
     lua+=(ROOT/'scripts/fat32-root-mame.lua').read_text()+'\n'
-    lua+=(ROOT/'scripts/fat32-mame.lua').read_text()
+    lua+=(ROOT/'scripts/mame-disk-script.lua').read_text()
     (logs/'run.lua').write_text(lua)
-    # Budget for the generated key stream as well as boot and final I/O.
-    seconds=max(args.seconds,120+sum((len(c)+1)*24+100 for c in commands)//60)
+    seconds=args.seconds
     cmd=[args.mame,'coco3','-rompath',args.rompath,'-skip_gameinfo','-cfg_directory',str(root/'cfg'),
         '-nvram_directory',str(root/'nvram'),'-snapshot_directory',str(root/'snap'),'-ram','512K',
         '-ext','fdc,bios=v11','-ext:fdc:wd17xx:0','525qd','-flop1',str(disk),'-hard1',str(media),
@@ -165,13 +175,17 @@ def run(args):
     assert re.search(rb'Bytes different:\s*00000000',console),console[-2000:]
     reads={int(n) for n in (logs/'vhd-reads.log').read_text().splitlines()}
     manifest=json.loads((root/'manifest.json').read_text())
+    verified_files=[]
     for name,records in manifest['records'].items():
-        if args.reopen and name not in ('/OS9BOOT','/SYSGO','/STARTUP','/CMDS/GRFDRV','/CMDS/SHELL','/CMDS/MDIR','/CMDS/DIR','/CMDS/LIST','/CMDS/CMP'):continue
+        if not args.reopen and name=='/REOPEN.CMD':continue
+        if args.reopen and name not in ('/REOPEN.CMD','/OS9BOOT','/SYSGO','/STARTUP','/CMDS/GRFDRV','/CMDS/SHELL','/CMDS/MDIR','/CMDS/DIR','/CMDS/LIST','/CMDS/CMP'):continue
         assert set(records)<=reads,f'file was not fully read from VHD: {name}'
+        verified_files.append(name)
     if args.write_test:fat_check.check(media,logs/'fsck.log',args.fsck)
     (logs/'result.json').write_text(json.dumps({'passed':True,'resident':manifest['resident'],
-        'loaded_files':list(manifest['records']),'floppy_sha256':hashes[0],'fat32_sha256':digest(media),'write_test':args.write_test,'reopen':args.reopen,'errors':errors,
+        'loaded_files':verified_files,'floppy_sha256':hashes[0],'fat32_sha256':digest(media),'write_test':args.write_test,'reopen':args.reopen,'errors':errors,
         'non_rbf_rejections':errors.count(249) if args.write_test else 0,
+        'disk_scripts':True,
         'recursive_deldir':bool(args.write_test),
         'fat_integrity_checked':bool(args.write_test),
         'random_seed':args.seed if args.write_test else None,
