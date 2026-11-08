@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assemble and execute BlkDev ABI 1 on MC6809, including an SD SPI peer.
+"""Assemble and execute blkdrv ABI 1 on MC6809, including an SD SPI peer.
 Requires lwasm and MC6809 (pip install MC6809). No OS or physical card needed.
 """
 import logging
@@ -23,7 +23,7 @@ DESC, REQ, PD, BUF, RAM, PORT = 0x1000, 0x1100, 0x1200, 0x4000, 0x5000, 0xFE90
 def assemble(tmp, level, cpu=0):
     (tmp / 'defsfile').write_text(f'Level equ {level}\n use os9.d\n use scf.d\n use rbf.d\n use wildbits.d\n')
     result = {}
-    for name in ('blkdev', 'llmemblk', 'llwbsdblk'):
+    for name in ('blkdrv', 'llmemblk', 'llwbsdblk'):
         source = ROOT / ('level1/wildbits/modules' if name == 'llwbsdblk' else 'level1/modules') / (name + '.asm')
         command = [os.environ.get('LWASM', 'lwasm'), '--6309' if cpu else '--6809', '--format=os9',
                    '--pragma=pcaspcr,nosymbolcase,condundefzero,undefextern,dollarnotlocal,noforwardrefmax',
@@ -43,9 +43,9 @@ class Machine:
         cfg = TestCfg({'trace': False, 'verbosity': 0})
         self.m = Memory(cfg)
         self.c = CPU(self.m, cfg)
-        self.s = modules['blkdev'][1]
+        self.s = modules['blkdrv'][1]
         self.bs = modules[backend][1]
-        self.m.load(DRIVER, modules['blkdev'][0])
+        self.m.load(DRIVER, modules['blkdrv'][0])
         self.m.load(BACKEND, modules[backend][0])
         self.allocations = []
         self.allocation_sizes = {}
@@ -440,7 +440,7 @@ def sd_tests(modules):
 
 
 if __name__ == '__main__':
-    with tempfile.TemporaryDirectory(prefix='blkdev-test-') as directory:
+    with tempfile.TemporaryDirectory(prefix='blkdrv-test-') as directory:
         tmp = Path(directory)
         for level in (1, 2):
             modules = assemble(tmp, level)

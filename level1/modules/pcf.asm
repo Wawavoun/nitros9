@@ -1,23 +1,24 @@
-* fatfm - read-only FAT32 file manager over BlkDev ABI 1.
+* pcf - FAT32 file manager over blkdrv ABI 1.
                     use       defsfile
-                    use       blkdev.d
+                    use       blkdrv.d
                     use       fat32.d
                     use       readdir.d
                     mod       eom,name,FlMgr+Objct,ReEnt+1,start,0
-name                fcs       /fatfm/
+name                fcs       /pcf/
                     fcb       1
-start               lbra      ReadOnly
+* File-manager entry slots are three bytes each; keep these long branches.
+start               lbra      Create
                     lbra      Open
-                    lbra      ReadOnly
+                    lbra      ReadOnly             MkDir not yet implemented
                     lbra      ChgDir
-                    lbra      ReadOnly
+                    lbra      Delete
                     lbra      Seek
                     lbra      Read
-                    lbra      ReadOnly
+                    lbra      Write
                     lbra      ReadLn
-                    lbra      ReadOnly
+                    lbra      WriteLn
                     lbra      GetStat
-                    lbra      ReadOnly
+                    lbra      SetStat
                     lbra      Close
 ReadOnly            ldb       #E$WP
                     coma
@@ -51,7 +52,7 @@ LELow               lda       1,x
                     rts
 LE16                clr       F.Val,u
                     clr       F.Val+1,u
-                    lbra      LELow
+                    bra       LELow
 LoadVal             ldd       ,x
                     std       F.Val,u
                     ldd       2,x
@@ -80,7 +81,7 @@ SubVal              ldd       2,x
                     rts
 CompareVal          ldd       F.Val,u
                     cmpd      ,x
-                    lbne      cmpdone@
+                    bne       cmpdone@
                     ldd       F.Val+2,u
                     cmpd      2,x
 cmpdone@            rts
@@ -105,15 +106,15 @@ ShiftRight          lsr       F.Val,u
                     ror       F.Val+2,u
                     ror       F.Val+3,u
                     decb
-                    lbne      ShiftRight
+                    bne       ShiftRight
                     rts
 ShiftLeft           lsl       F.Val+3,u
                     rol       F.Val+2,u
                     rol       F.Val+1,u
                     rol       F.Val,u
-                    lbcs      shiftbad@
+                    bcs       shiftbad@
                     decb
-                    lbne      ShiftLeft
+                    bne       ShiftLeft
                     clrb
                     rts
 shiftbad@           lbra      BadMedia
@@ -138,44 +139,42 @@ Driver              pshs      a,x,y,u
                     puls      a,x,y,u,pc
 
 * Val=absolute LBA. Separate one-sector FAT and data caches.
-ReadData            tst       F.DataValid,u
-                    lbeq      datafill@
-                    leax      F.DataLBA,u
-                    lbsr      CompareVal
-                    lbeq      dataok@
-datafill@           clr       F.DataValid,u
+ReadData            leax      F.DataValid,u
+                    pshs      x
                     leax      F.Data,u
-                    stx       F.Request+BR.Buffer,u
-                    lbsr      ReadBlock
-                    lbcs      dataret@
-                    leax      F.DataLBA,u
-                    lbsr      StoreVal
-                    inc       F.DataValid,u
-dataok@             leax      F.Data,u
-                    clrb
-dataret@            rts
-ReadFat             tst       F.FatValid,u
-                    lbeq      fatfill@
-                    leax      F.FatLBA,u
-                    lbsr      CompareVal
-                    lbeq      fatok@
-fatfill@            clr       F.FatValid,u
+                    bra       ReadCache
+ReadFat             leax      F.FatValid,u
+                    pshs      x
                     leax      F.Fat,u
+* Stack: sector buffer, cache descriptor (valid byte + LBA). Y remains the
+* OS-9 path descriptor throughout ReadBlock/Driver. Failed fills stay invalid.
+ReadCache           pshs      x
+                    ldx       2,s
+                    tst       ,x
+                    beq       cachefill@
+                    leax      1,x
+                    lbsr      CompareVal
+                    beq       cachehit@
+cachefill@          ldx       2,s
+                    clr       ,x
+                    ldx       ,s
                     stx       F.Request+BR.Buffer,u
-                    lbsr      ReadBlock
-                    lbcs      fatret@
-                    leax      F.FatLBA,u
+                    bsr       ReadBlock
+                    bcs       cacheret@
+                    ldx       2,s
+                    leax      1,x
                     lbsr      StoreVal
-                    inc       F.FatValid,u
-fatok@              leax      F.Fat,u
-                    clrb
-fatret@             rts
+                    inc       -1,x
+cachehit@           clrb
+cacheret@           puls      x
+                    leas      2,s
+                    rts
 ReadBlock           leax      F.Request+BR.LBA,u
                     lbsr      StoreVal
                     leax      F.Request,u
                     lda       #BD.Read
-                    lbsr      Driver
-                    lbcs      blockret@
+                    bsr       Driver
+                    bcs       blockret@
                     ldd       F.Request+BR.Done,u
                     cmpd      #1
                     lbne      BadMedia
@@ -241,8 +240,8 @@ Mount               leax      F.Info,u
                     sta       F.Fats,u
                     lda       13,x
                     lbeq      mountbad
-                    lbmi      spc128@
-                    lbra      spcpower@
+                    bmi       spc128@
+                    bra       spcpower@
 spc128@             cmpa      #128
                     lbne      mountbad
 spcpower@           sta       F.SPC,u
@@ -251,21 +250,21 @@ spcpower@           sta       F.SPC,u
                     lbne      mountbad
                     lda       F.SPC,u
 spcshift@           lsra
-                    lbeq      spcdone@
+                    beq       spcdone@
                     inc       F.Shift,u
-                    lbra      spcshift@
+                    bra       spcshift@
 spcdone@            leax      32,x
                     lbsr      LE32
                     leax      F.Total,u
                     lbsr      StoreVal
                     ldd       F.Val,u
-                    lbne      totalok@
+                    bne       totalok@
                     ldd       F.Val+2,u
                     lbeq      mountbad
 totalok@            ldd       F.Span,u
-                    lbne      spancheck@
+                    bne       spancheck@
                     ldd       F.Span+2,u
-                    lbeq      endcheck@
+                    beq       endcheck@
 spancheck@          leax      F.Span,u
                     lbsr      CompareVal
                     lbhi      mountbad
@@ -290,7 +289,7 @@ endcheck@           lbsr      DecVal
                     leax      F.Data+36,u
                     lbsr      LE32
                     ldd       F.Val,u
-                    lbne      fatszok@
+                    bne       fatszok@
                     ldd       F.Val+2,u
                     lbeq      mountbad
 fatszok@            leax      F.FatSize,u
@@ -301,7 +300,7 @@ fatmultiply@        leax      F.Temp,u
                     lbsr      AddVal
                     lbcs      mountbadpop
                     dec       ,s
-                    lbne      fatmultiply@
+                    bne       fatmultiply@
                     leas      1,s
                     leax      F.Temp,u
                     lbsr      LoadVal
@@ -323,18 +322,18 @@ fatmultiply@        leax      F.Temp,u
                     lbsr      SubVal
                     lbsr      LoadVal
                     ldb       F.Shift,u
-                    lbeq      clusters@
+                    beq       clusters@
                     lbsr      ShiftRight
 clusters@           ldd       F.Val,u
-                    lbne      minimum@
+                    bne       minimum@
                     ldd       F.Val+2,u
                     cmpd      #65525               discriminate FAT32 by cluster count
-                    lblo      mountbad
+                    blo       mountbad
 minimum@            lbsr      IncVal
                     leax      F.MaxCluster,u
                     lbsr      StoreVal
-                    lbsr      ValidCluster
-                    lbcs      mountret
+                    bsr       ValidCluster
+                    bcs       mountret
 * FAT must contain entries zero through MaxCluster inclusive.
                     lbsr      IncVal
                     ldd       F.Val+2,u
@@ -348,26 +347,27 @@ minimum@            lbsr      IncVal
                     lbsr      ShiftRight
                     leax      F.FatSize,u
                     lbsr      CompareVal
-                    lbhi      mountbad
+                    bhi       mountbad
 * FAT32 ExtFlags: mirroring enabled chooses FAT 0; otherwise select active FAT.
                     lda       F.Data+40,u
                     bita      #$80
-                    lbeq      root@
+                    beq       root@
                     anda      #15
                     cmpa      F.Fats,u
-                    lbhs      mountbad
+                    bhs       mountbad
                     sta       F.Active,u
                     tsta
-                    lbeq      root@
+                    beq       root@
                     leax      F.FatSize,u
                     lbsr      LoadVal
                     leax      F.FatStart,u
                     lbsr      AddVal
-                    lbcs      mountbad
-root@               leax      F.Data+44,u
+                    bcs       mountbad
+root@               lbsr      MountWriteInfo
+                    leax      F.Data+44,u
                     lbsr      LE32
-                    lbsr      ValidCluster
-                    lbcs      mountret
+                    bsr       ValidCluster
+                    bcs       mountret
                     leax      F.Root,u
                     lbsr      StoreVal
                     clrb
@@ -389,35 +389,33 @@ AddBase             ldd       F.Val+2,u
                     rts
 ValidCluster        ldd       F.Val,u
                     cmpd      #$0FFF
-                    lbhi      invalid@
-                    lblo      lowcheck@
+                    bhi       invalid@
+                    blo       lowcheck@
                     ldd       F.Val+2,u
                     cmpd      #$FFF0
-                    lbhs      invalid@
+                    bhs       invalid@
 lowcheck@           ldd       F.Val,u
-                    lbne      maxcheck@
+                    bne       maxcheck@
                     ldd       F.Val+2,u
                     cmpd      #2
-                    lblo      invalid@
+                    blo       invalid@
 maxcheck@           leax      F.MaxCluster,u
                     lbsr      CompareVal
-                    lbhi      invalid@
+                    bhi       invalid@
                     clrb
                     rts
 invalid@            lbra      BadMedia
 
 * Cluster in/out, EOF only for FAT EOC markers; free/bad/reserved links fail.
-NextCluster         leax      F.Cluster,u
+FatEntry            leax      F.Cluster,u
                     lbsr      LoadVal
-                    lbsr      ValidCluster
-                    lbcs      nextret@
                     ldb       #7
                     lbsr      ShiftRight
                     leax      F.FatStart,u
-                    lbsr      AddBase
-                    lbcs      nextret@
+                    bsr       AddBase
+                    bcs       fatentryret@
                     lbsr      ReadFat
-                    lbcs      nextret@
+                    bcs       fatentryret@
                     ldb       F.Cluster+3,u
                     andb      #127
                     clra
@@ -426,18 +424,26 @@ NextCluster         leax      F.Cluster,u
                     lslb
                     rola
                     leax      d,x
+                    clrb
+fatentryret@        rts
+NextCluster         leax      F.Cluster,u
+                    lbsr      LoadVal
+                    bsr       ValidCluster
+                    bcs       nextret@
+                    bsr       FatEntry
+                    bcs       nextret@
                     lbsr      LE32
                     lda       F.Val,u
                     anda      #15
                     sta       F.Val,u
                     ldd       F.Val,u
                     cmpd      #$0FFF
-                    lbne      linkvalid@
+                    bne       linkvalid@
                     ldd       F.Val+2,u
                     cmpd      #$FFF8
                     lbhs      EOFError
 linkvalid@          lbsr      ValidCluster
-                    lbcs      nextret@
+                    bcs       nextret@
                     leax      F.Cluster,u
                     lbsr      StoreVal
                     clrb
@@ -447,7 +453,7 @@ nextret@            rts
 ResetWalk           leax      F.Start,u
                     lbsr      LoadVal
                     lbsr      ValidCluster
-                    lbcs      resetret@
+                    bcs       resetret@
                     leax      F.Walk,u
                     lbsr      StoreVal
                     leax      F.Hare,u
@@ -463,8 +469,8 @@ Advance             leax      F.Walk,u
                     lbsr      LoadVal
                     leax      F.Cluster,u
                     lbsr      StoreVal
-                    lbsr      NextCluster
-                    lbcs      advret@
+                    bsr       NextCluster
+                    bcs       advret@
                     leax      F.Walk,u
                     lbsr      StoreVal
                     leax      F.WalkIndex,u
@@ -473,9 +479,9 @@ Advance             leax      F.Walk,u
                     leax      F.WalkIndex,u
                     lbsr      StoreVal
                     ldd       F.Hare,u
-                    lbne      harego@
+                    bne       harego@
                     ldd       F.Hare+2,u
-                    lbeq      advok@
+                    beq       advok@
 harego@             leax      F.Hare,u
                     lbsr      LoadVal
                     leax      F.Cluster,u
@@ -483,9 +489,9 @@ harego@             leax      F.Hare,u
                     ldb       #2
                     pshs      b
 harestep@           lbsr      NextCluster
-                    lbcs      hareend@
+                    bcs       hareend@
                     dec       ,s
-                    lbne      harestep@
+                    bne       harestep@
                     leas      1,s
                     leax      F.Hare,u
                     lbsr      StoreVal
@@ -496,7 +502,7 @@ advok@              clrb
 advret@             rts
 hareend@            leas      1,s
                     cmpb      #E$EOF
-                    lbne      advfail@
+                    bne       advfail@
                     clra
                     clrb
                     std       F.Hare,u
@@ -514,31 +520,31 @@ Locate              leax      F.Offset,u
                     leax      F.Target,u
                     lbsr      StoreVal
                     tst       F.WalkValid,u
-                    lbeq      restart@
+                    beq       restart@
                     leax      F.WalkIndex,u
                     lbsr      CompareVal
-                    lbhs      locatewalk@
+                    bhs       locatewalk@
 restart@            lbsr      ResetWalk
-                    lbcs      locret@
+                    bcs       locret@
 locatewalk@         leax      F.Target,u
                     lbsr      LoadVal
                     leax      F.WalkIndex,u
                     lbsr      CompareVal
-                    lbeq      locsector@
+                    beq       locsector@
                     lbsr      Advance
-                    lbcs      locret@
-                    lbra      locatewalk@
+                    bcs       locret@
+                    bra       locatewalk@
 locsector@          leax      F.Walk,u
                     lbsr      LoadVal
                     lbsr      DecVal
                     lbsr      DecVal
                     ldb       F.Shift,u
-                    lbeq      locbase@
+                    beq       locbase@
                     lbsr      ShiftLeft
-                    lbcs      locret@
+                    bcs       locret@
 locbase@            leax      F.DataStart,u
                     lbsr      AddBase
-                    lbcs      locret@
+                    bcs       locret@
                     leax      F.Temp,u
                     lbsr      StoreVal
                     leax      F.Offset,u
@@ -555,22 +561,23 @@ locbase@            leax      F.DataStart,u
                     sta       F.Val+3,u
                     leax      F.Temp,u
                     lbsr      AddBase
-                    lbcs      locret@
+                    bcs       locret@
                     lbsr      ReadData
-                    lbcs      locret@
+                    bcs       locret@
                     ldd       F.Offset+2,u
                     anda      #1
                     leax      d,x
                     clrb
 locret@             rts
 
-Open                pshs      x,y,u
+CreateImpl          lda       #1
+                    bra       OpenBegin
+OpenImpl            clra
+OpenBegin           pshs      a,x,y,u
                     clr       PD.BUF,y
                     clr       PD.BUF+1,y
                     lda       PD.MOD,y
-                    bita      #WRITE.
-                    lbne      openwp
-                    bita      #READ.+EXEC.
+                    bita      #READ.+WRITE.+EXEC.
                     lbeq      openaccess
                     ldd       #F.Len
                     os9       F$SRqMem
@@ -580,57 +587,74 @@ Open                pshs      x,y,u
                     ldd       #F.Len
 openzero@           clr       ,x+
                     subd      #1
-                    lbne      openzero@
-                    ldx       4,s
+                    bne       openzero@
+                    lda       ,s
+                    sta       F.Creating,u
+                    sty       F.Owner,u
+                    ldx       5,s
                     stx       F.Regs,u
                     lbsr      Mount
-                    lbcs      openfailed
-                    lbsr      CopyPath
-                    lbcs      openfailed
+                    bcs       openfailed
+                    lda       PD.MOD,y
+                    bita      #WRITE.
+                    beq       openread@
+                    lbsr      Writable
+                    bcs       openfailed
+openread@           bsr       CopyPath
+                    bcs       openfailed
                     lbsr      Resolve
-                    lbcs      openfailed
-                    lda       F.Entry+11,u
+                    bcs       openfailed
+                    tst       F.Creating,u
+                    beq       openexisting@
+                    ldb       #E$CEF
+                    bra       openfailed
+openexisting@       lda       F.Entry+11,u
                     anda      #$10
-                    lbeq      openfile@
+                    beq       openfile@
                     lda       PD.MOD,y
                     bita      #DIR.
-                    lbeq      openaccessfree
+                    beq       openaccessfree
                     lbsr      DirectorySize
-                    lbcs      openfailed
-                    lbra      openok@
+                    bcs       openfailed
+                    bra       openok@
 openfile@           lda       PD.MOD,y
                     bita      #DIR.
-                    lbne      openaccessfree
+                    bne       openaccessfree
                     ldd       F.Size,u
-                    lbne      openvalid@
+                    bne       openvalid@
                     ldd       F.Size+2,u
-                    lbeq      openok@
+                    beq       openok@
 openvalid@          leax      F.Start,u
                     lbsr      LoadVal
                     lbsr      ValidCluster
-                    lbcs      openfailed
-openok@             lda       #READ.+EXEC.+PREAD.+PEXEC.
+                    bcs       openfailed
+openok@             lda       PD.MOD,y
+                    bita      #WRITE.
+                    beq       openshare@
+                    lbsr      CanWriteFile
+                    bcs       openfailed
+openshare@          lbsr      RegisterPath
+                    bcs       openfailed
                     ldb       F.Entry+11,u
-                    bitb      #$10
-                    lbeq      openattr@
-                    ora       #DIR.
-openattr@           sta       PD.ATT,y
+                    lbsr      Attributes
+                    sta       PD.ATT,y
                     clr       F.WalkValid,u
                     clrb
-openreturn          puls      x,y,u,pc
+openreturn          leas      1,s
+                    puls      x,y,u,pc
 openwp              ldb       #E$WP
                     coma
-                    lbra      openreturn
+                    bra       openreturn
 openaccess          ldb       #E$FNA
                     coma
-                    lbra      openreturn
+                    bra       openreturn
 openaccessfree      ldb       #E$FNA
                     coma
 openfailed          pshs      b
                     lbsr      FreePath
                     puls      b
                     coma
-                    lbra      openreturn
+                    bra       openreturn
 
 * Copy caller path to private memory. OS-9 high-bit terminators are accepted.
 CopyPath            pshs      y
@@ -648,13 +672,13 @@ copychar@           pshs      y
                     endc
                     puls      y
                     tsta
-                    lbeq      pathdone@
+                    beq       pathdone@
                     cmpa      #C$CR
-                    lbeq      pathdone@
+                    beq       pathdone@
                     cmpa      #C$SPAC
-                    lbeq      pathdone@
+                    beq       pathdone@
                     cmpa      #',
-                    lbeq      pathdone@
+                    beq       pathdone@
                     pshs      a
                     anda      #$7F
                     sta       ,y+
@@ -662,10 +686,10 @@ copychar@           pshs      y
                     tfr       y,d
                     subd      1,s                compare copied length (saved char is atop pointer)
                     cmpd      #255
-                    lbhi      pathtoolong@
+                    bhi       pathtoolong@
                     puls      a
                     tsta
-                    lbpl      copychar@
+                    bpl       copychar@
 pathdone@           clr       ,y
 * Return the next argument, skipping OS-9 command-line separators.
 pathskip@           equ       *
@@ -677,11 +701,11 @@ pathskip@           equ       *
                     lda       ,x
                     endc
                     cmpa      #C$SPAC
-                    lbeq      pathadvance@
+                    beq       pathadvance@
                     cmpa      #',
-                    lbne      pathreturn@
+                    bne       pathreturn@
 pathadvance@        leax      1,x
-                    lbra      pathskip@
+                    bra       pathskip@
 pathreturn@         leas      2,s
                     ldy       F.Regs,u
                     stx       R$X,y
@@ -703,68 +727,79 @@ Resolve             leax      F.Root,u
                     lda       ,x
                     lbeq      resolvebad@
                     cmpa      #'/
-                    lbeq      skipdevice@
+                    beq       skipdevice@
                     pshs      x
                     ldx       <D.Proc
                     leax      P$DIO,x
                     lda       PD.MOD,y
                     bita      #EXEC.
-                    lbeq      cwd@
+                    beq       cwd@
                     leax      6,x
 cwd@                ldd       ,x
                     cmpd      PD.DEV,y
-                    lbne      cwdroot@
+                    bne       cwdroot@
                     leax      2,x
                     lbsr      LoadVal
                     ldd       F.Val,u
-                    lbne      cwdvalid@
+                    bne       cwdvalid@
                     ldd       F.Val+2,u
-                    lbeq      cwdroot@
+                    beq       cwdroot@
 cwdvalid@           lbsr      ValidCluster
-                    lbcs      cwderror@
+                    bcs       cwderror@
                     leax      F.Start,u
                     lbsr      StoreVal
 cwdroot@            puls      x
-                    lbra      component@
+                    bra       component@
 cwderror@           leas      2,s
                     rts
 skipdevice@         leax      1,x
 skipdevchar@        lda       ,x+
-                    lbeq      resolveroot@
+                    beq       resolveroot@
                     cmpa      #'/
-                    lbne      skipdevchar@
+                    bne       skipdevchar@
 component@          lda       ,x
-                    lbeq      resolveroot@
+                    beq       resolveroot@
                     cmpa      #'/
-                    lbne      parsename@
+                    bne       parsename@
                     leax      1,x
-                    lbra      component@
+                    bra       component@
 parsename@          stx       F.Cursor,u
-                    lbsr      ParseName
-                    lbcs      resolveret@
+                    bsr       ParseName
+                    bcs       resolveret@
                     tst       F.Dots,u
-                    lbeq      ordinary@
+                    beq       ordinary@
                     dec       F.Dots,u
-                    lbeq      aftercomponent@
+                    beq       aftercomponent@
 parentloop@         leax      F.Start,u
                     lbsr      LoadVal
                     leax      F.Root,u
                     lbsr      CompareVal
-                    lbeq      parentdone@
+                    beq       parentdone@
                     lbsr      Lookup
-                    lbcs      resolveret@
+                    bcs       resolveret@
 parentdone@         dec       F.Dots,u
-                    lbne      parentloop@
-                    lbra      aftercomponent@
+                    bne       parentloop@
+                    bra       aftercomponent@
 ordinary@           lbsr      Lookup
-                    lbcs      resolveret@
+                    bcc       aftercomponent@
+                    cmpb      #E$PNNF
+                    bne       resolverefail@
+                    tst       F.Creating,u
+                    beq       resolverefail@
+                    ldx       F.Cursor,u
+                    tst       ,x
+                    bne       resolverefail@
+                    lbsr      CreateEntry
+                    bra       resolveret@
+resolverefail@      coma
+                    rts
 aftercomponent@     ldx       F.Cursor,u
                     lda       ,x
-                    lbeq      resolved@
+                    beq       resolved@
                     lda       F.Entry+11,u
                     bita      #$10
                     lbeq      NotFound
-                    lbra      component@
+                    bra       component@
 resolveroot@        clrb
                     rts
 resolved@           clrb
@@ -778,52 +813,52 @@ ParseName           pshs      y
                     lda       #C$SPAC
 padname@            sta       ,y+
                     decb
-                    lbne      padname@
+                    bne       padname@
                     clr       F.Dots,u
                     ldx       F.Cursor,u
 dotcount@           lda       ,x+
                     cmpa      #'.
-                    lbne      dotend@
+                    bne       dotend@
                     inc       F.Dots,u
-                    lbra      dotcount@
+                    bra       dotcount@
 dotend@             tsta
-                    lbeq      alldots@
+                    beq       alldots@
                     cmpa      #'/
-                    lbeq      alldots@
+                    beq       alldots@
 normalname@         clr       F.Dots,u
                     ldx       F.Cursor,u
                     leay      F.Name,u
                     ldb       #8
 basename@           lda       ,x+
-                    lbeq      nameterm@
+                    beq       nameterm@
                     cmpa      #'/
-                    lbeq      nameterm@
+                    beq       nameterm@
                     cmpa      #'.
-                    lbeq      extension@
-                    lbsr      NameChar
-                    lbcs      namebad@
+                    beq       extension@
+                    bsr       NameChar
+                    bcs       namebad@
                     tstb
-                    lbeq      namebad@
+                    beq       namebad@
                     sta       ,y+
                     decb
-                    lbra      basename@
+                    bra       basename@
 extension@          cmpb      #8
-                    lbeq      namebad@
+                    beq       namebad@
                     leay      F.Name+8,u
                     ldb       #3
 extchar@            lda       ,x+
-                    lbeq      nameterm@
+                    beq       nameterm@
                     cmpa      #'/
-                    lbeq      nameterm@
-                    lbsr      NameChar
-                    lbcs      namebad@
+                    beq       nameterm@
+                    bsr       NameChar
+                    bcs       namebad@
                     tstb
-                    lbeq      namebad@
+                    beq       namebad@
                     sta       ,y+
                     decb
-                    lbra      extchar@
+                    bra       extchar@
 alldots@            tst       F.Dots,u
-                    lbeq      normalname@
+                    beq       normalname@
                     lda       #'.
                     sta       F.Name,u
                     sta       F.Name+1,u
@@ -834,20 +869,20 @@ nameterm@           leax      -1,x
 namebad@            puls      y
                     lbra      PathError
 NameChar            cmpa      #'a
-                    lblo      charcheck@
+                    blo       charcheck@
                     cmpa      #'z
-                    lbhi      charcheck@
+                    bhi       charcheck@
                     suba      #32
 charcheck@          cmpa      #33
-                    lblo      charbad@
+                    blo       charbad@
                     cmpa      #127
-                    lbhs      charbad@
+                    bhs       charbad@
                     pshs      x
                     leax      IllegalChars,pcr
 charloop@           tst       ,x
-                    lbeq      charok@
+                    beq       charok@
                     cmpa      ,x+
-                    lbne      charloop@
+                    bne       charloop@
                     puls      x
 charbad@            coma
                     rts
@@ -858,7 +893,8 @@ IllegalChars        fcc       /"*+,.:;<=>?[\]|/
                     fcb       0
 
 * Scan one directory for Name; all addresses and offsets are 32 bits.
-Lookup              clr       F.WalkValid,u
+Lookup              clr       F.HasLFN,u
+                    clr       F.WalkValid,u
                     clra
                     clrb
                     std       F.Scan,u
@@ -868,31 +904,37 @@ lookloop@           leax      F.Scan,u
                     leax      F.Offset,u
                     lbsr      StoreVal
                     lbsr      Locate
-                    lbcs      lookerror@
+                    bcs       lookerror@
                     lda       ,x
-                    lbeq      lookmissing@
+                    beq       lookmissing@
                     cmpa      #$E5
-                    lbeq      looknext@
+                    beq       lookclear@
                     lda       11,x
-                    bita      #8                  skips volume labels and LFN slots
-                    lbne      looknext@
+                    cmpa      #$0F
+                    bne       lookattr@
+                    inc       F.HasLFN,u
+                    bra       looknext@
+lookattr@           bita      #8
+                    bne       lookclear@
                     pshs      x,y
                     leay      F.Name,u
                     ldb       #11
 lookcompare@        lda       ,x+
                     cmpa      ,y+
-                    lbne      looknomatch@
+                    bne       looknomatch@
                     decb
-                    lbne      lookcompare@
+                    bne       lookcompare@
                     puls      x,y
-                    lbsr      AdoptEntry
+                    lbsr      EntryLocation
+                    bsr       AdoptEntry
                     rts
 looknomatch@        puls      x,y
-looknext@           lbsr      ScanNext
-                    lbcc      lookloop@
+lookclear@          clr       F.HasLFN,u
+looknext@           bsr       ScanNext
+                    bcc       lookloop@
                     rts
 lookerror@          cmpb      #E$EOF
-                    lbne      lookio@
+                    bne       lookio@
 lookmissing@        lbra      NotFound
 lookio@             coma
                     rts
@@ -916,7 +958,7 @@ AdoptEntry          pshs      y
 adoptcopy@          lda       ,x+
                     sta       ,y+
                     decb
-                    lbne      adoptcopy@
+                    bne       adoptcopy@
                     puls      y
                     leax      F.Entry+28,u
                     lbsr      LE32
@@ -931,11 +973,11 @@ adoptcopy@          lda       ,x+
                     std       F.Val+2,u
                     lda       F.Entry+11,u
                     bita      #$10
-                    lbeq      adoptstart@
+                    beq       adoptstart@
                     ldd       F.Val,u
-                    lbne      adoptvalid@
+                    bne       adoptvalid@
                     ldd       F.Val+2,u
-                    lbne      adoptvalid@
+                    bne       adoptvalid@
 * Only the actual '..' entry is allowed to encode the root as cluster zero.
                     ldd       F.Entry,u
                     cmpd      #$2E2E
@@ -943,7 +985,7 @@ adoptcopy@          lda       ,x+
                     leax      F.Root,u
                     lbsr      LoadVal
 adoptvalid@         lbsr      ValidCluster
-                    lbcs      adoptret@
+                    bcs       adoptret@
 adoptstart@         leax      F.Start,u
                     lbsr      StoreVal
                     clr       F.WalkValid,u
@@ -962,14 +1004,14 @@ dirsizewalk@        leax      F.Scan,u
                     leax      F.Offset,u
                     lbsr      StoreVal
                     lbsr      Locate
-                    lbcs      dirsizeend@
+                    bcs       dirsizeend@
                     tst       ,x
-                    lbeq      dirsizefound@
+                    beq       dirsizefound@
                     lbsr      ScanNext
-                    lbcs      dirsizeret@
-                    lbra      dirsizewalk@
+                    bcs       dirsizeret@
+                    bra       dirsizewalk@
 dirsizeend@         cmpb      #E$EOF
-                    lbne      dirsizeerror@
+                    bne       dirsizeerror@
 dirsizefound@       leax      F.Scan,u
                     lbsr      LoadVal
                     ldd       F.Val+2,u
@@ -987,38 +1029,39 @@ dirsizeret@         rts
 dirsizeerror@       coma
                     rts
 
-ChgDir              pshs      x,y,u
+ChgDirImpl          pshs      x,y,u
                     lda       PD.MOD,y
                     ora       #DIR.
                     sta       PD.MOD,y
-                    lbsr      Open
-                    lbcs      chgret@
+                    lbsr      OpenImpl
+                    bcs       chgret@
                     ldu       PD.BUF,y
                     ldx       <D.Proc
                     lda       PD.MOD,y
                     bita      #READ.
-                    lbeq      chgexec@
+                    beq       chgexec@
                     ldd       F.Start,u
                     std       P$DIO+2,x
                     ldd       F.Start+2,u
                     std       P$DIO+4,x
 chgexec@            lda       PD.MOD,y
                     bita      #EXEC.
-                    lbeq      chgfree@
+                    beq       chgfree@
                     ldd       F.Start,u
                     std       P$DIO+8,x
                     ldd       F.Start+2,u
                     std       P$DIO+10,x
-chgfree@            lbsr      FreePath
+chgfree@            bsr       FreePath
 chgret@             puls      x,y,u,pc
-Close               tst       PD.CNT,y
-                    lbne      closeshared@
-                    lbra      FreePath
+CloseImpl           tst       PD.CNT,y
+                    bne       closeshared@
+                    bra       FreePath
 closeshared@        clrb
                     rts
 FreePath            pshs      x,y,u
                     ldu       PD.BUF,y
-                    lbeq      freeok@
+                    beq       freeok@
+                    lbsr      UnregisterPath
                     clr       PD.BUF,y
                     clr       PD.BUF+1,y
                     ldd       #F.Len
@@ -1027,7 +1070,7 @@ FreePath            pshs      x,y,u
 freeok@             clrb
                     puls      x,y,u,pc
 
-Seek                pshs      x,y,u
+SeekImpl            pshs      x,y,u
                     tfr       u,x
                     ldu       PD.BUF,y
                     ldd       R$X,x
@@ -1037,9 +1080,9 @@ Seek                pshs      x,y,u
                     clrb
                     puls      x,y,u,pc
 
-Read                clra
-                    lbra      ReadCommon
-ReadLn              lda       #1
+ReadImpl            clra
+                    bra       ReadCommon
+ReadLnImpl          lda       #1
 ReadCommon          pshs      x,y,u
                     tfr       u,x
                     ldu       PD.BUF,y
@@ -1063,7 +1106,7 @@ readloop@           ldd       F.Remain,u
                     lbhs      readeof@
                     lda       F.Entry+11,u
                     bita      #$10
-                    lbne      readdirectory@
+                    bne       readdirectory@
                     leax      F.Offset,u
                     lbsr      StoreVal
                     lbsr      Locate
@@ -1073,7 +1116,7 @@ readloop@           ldd       F.Remain,u
                     pshs      d
                     ldd       #512
                     subd      ,s++
-                    lbra      readlimit@
+                    bra       readlimit@
 readdirectory@      lbsr      DirectoryRecord
                     lbcs      readexit@
                     ldb       F.Pos+3,u
@@ -1083,7 +1126,7 @@ readdirectory@      lbsr      DirectoryRecord
                     addb      #32
                     clra
 readlimit@          cmpd      F.Remain,u
-                    lbls      readfilesize@
+                    bls       readfilesize@
                     ldd       F.Remain,u
 readfilesize@       std       F.Move,u
                     pshs      x
@@ -1096,25 +1139,25 @@ readfilesize@       std       F.Move,u
                     leax      F.Temp,u
                     lbsr      SubVal
                     ldd       F.Temp,u
-                    lbne      readscan@
+                    bne       readscan@
                     ldd       F.Temp+2,u
                     cmpd      F.Move,u
-                    lbhs      readscan@
+                    bhs       readscan@
                     std       F.Move,u
 readscan@           puls      x
                     tst       F.Line,u
-                    lbeq      readmove@
+                    beq       readmove@
                     pshs      x
                     ldd       F.Move,u
                     pshs      d
 linescan@           lda       ,x+
                     cmpa      #C$CR
-                    lbeq      linefound@
+                    beq       linefound@
                     ldd       ,s
                     subd      #1
                     std       ,s
-                    lbne      linescan@
-                    lbra      lineend@
+                    bne       linescan@
+                    bra       lineend@
 linefound@          ldd       F.Move,u
                     subd      ,s
                     addd      #1
@@ -1122,8 +1165,8 @@ linefound@          ldd       F.Move,u
                     inc       F.Stop,u
 lineend@            leas      2,s
                     puls      x
-readmove@           lbsr      MoveOut
-                    lbcs      readexit@
+readmove@           bsr       MoveOut
+                    bcs       readexit@
                     ldd       F.Move,u
                     addd      F.Actual,u
                     std       F.Actual,u
@@ -1150,15 +1193,15 @@ readexit@           pshs      b,cc
                     puls      b,cc
                     puls      x,y,u,pc
 readeof@            ldd       F.Actual,u
-                    lbne      readsuccess@
+                    bne       readsuccess@
                     ldb       #E$EOF
                     coma
-                    lbra      readexit@
+                    bra       readexit@
 readchainerror@     cmpb      #E$EOF
-                    lbne      readerror@
+                    bne       readerror@
                     ldb       #E$BTyp              chain ended before file size
 readerror@          coma
-                    lbra      readexit@
+                    bra       readexit@
 
 * X=system source, F.Dest=caller destination, F.Move=count.
 MoveOut             pshs      x,y,u
@@ -1174,11 +1217,11 @@ MoveOut             pshs      x,y,u
                     else
                     ldu       F.Dest,u
 movebyte@           cmpy      #0
-                    lbeq      movedone@
+                    beq       movedone@
                     lda       ,x+
                     sta       ,u+
                     leay      -1,y
-                    lbra      movebyte@
+                    bra       movebyte@
 movedone@           clrb
                     endc
                     puls      x,y,u,pc
@@ -1189,17 +1232,17 @@ DirectoryRecord     leax      F.Record,u
                     ldb       #32
 recordzero@         clr       ,x+
                     decb
-                    lbne      recordzero@
+                    bne       recordzero@
                     leax      F.Pos,u
                     lbsr      LoadVal
                     ldd       F.Val,u
-                    lbne      recordraw@
+                    bne       recordraw@
                     ldd       F.Val+2,u
                     cmpd      #64
-                    lbhs      recordraw@
+                    bhs       recordraw@
                     leax      F.Record,u
                     cmpd      #32
-                    lbhs      recorddot@
+                    bhs       recorddot@
                     lda       #'.
                     sta       ,x
                     lda       #'.+$80
@@ -1230,37 +1273,37 @@ recordraw@          ldd       F.Val+2,u
                     leax      F.Cookie,u
                     lbsr      StoreVal
                     lbsr      Locate
-                    lbcs      recordret@
+                    bcs       recordret@
                     lda       ,x
-                    lbeq      recordblank@
+                    beq       recordblank@
                     cmpa      #$E5
-                    lbeq      recordblank@
+                    beq       recordblank@
                     cmpa      #'.
-                    lbeq      recordblank@
+                    beq       recordblank@
                     lda       11,x
                     bita      #8
-                    lbne      recordblank@
+                    bne       recordblank@
                     pshs      y
                     leay      F.Record,u
                     ldb       #8
 recordbase@         lda       ,x+
                     cmpa      #C$SPAC
-                    lbeq      recordbaseskip@
+                    beq       recordbaseskip@
                     sta       ,y+
 recordbaseskip@     decb
-                    lbne      recordbase@
+                    bne       recordbase@
                     lda       ,x
                     cmpa      #C$SPAC
-                    lbeq      recordnameend@
+                    beq       recordnameend@
                     lda       #'.
                     sta       ,y+
                     ldb       #3
 recordext@          lda       ,x+
                     cmpa      #C$SPAC
-                    lbeq      recordextskip@
+                    beq       recordextskip@
                     sta       ,y+
 recordextskip@      decb
-                    lbne      recordext@
+                    bne       recordext@
 recordnameend@      lda       -1,y
                     ora       #$80
                     sta       -1,y
@@ -1273,7 +1316,7 @@ recordblank@        leax      F.Record,u
                     clrb
 recordret@          rts
 
-GetStat             pshs      x,y,u
+GetStatImpl         pshs      x,y,u
                     tfr       u,x
                     ldu       PD.BUF,y
                     stx       F.Regs,u
@@ -1281,49 +1324,49 @@ GetStat             pshs      x,y,u
                     cmpb      #SS.ReadDir
                     lbeq      statreaddir
                     cmpb      #SS.Opt
-                    lbeq      statok
+                    beq       statok
                     cmpb      #SS.DevNm
-                    lbeq      statok                IOMan copies these common results
+                    beq       statok                IOMan copies these common results
                     cmpb      #SS.Size
-                    lbeq      statsize
+                    beq       statsize
                     cmpb      #SS.Pos
-                    lbeq      statpos
+                    beq       statpos
                     cmpb      #SS.EOF
-                    lbeq      stateof
+                    beq       stateof
                     cmpb      #SS.Ready
-                    lbeq      statready
+                    beq       statready
                     cmpb      #SS.FD
-                    lbeq      statfd
+                    beq       statfd
                     cmpb      #SS.FDInf
-                    lbeq      statfdinf
+                    beq       statfdinf
                     ldb       #E$UnkSvc
                     coma
 statreturn          puls      x,y,u,pc
 statok              clrb
-                    lbra      statreturn
+                    bra       statreturn
 statsize            ldd       F.Size,u
                     std       R$X,x
                     ldd       F.Size+2,u
                     std       R$U,x
-                    lbra      statok
+                    bra       statok
 statpos             ldd       F.Pos,u
                     std       R$X,x
                     ldd       F.Pos+2,u
                     std       R$U,x
-                    lbra      statok
+                    bra       statok
 stateof             leax      F.Pos,u
                     lbsr      LoadVal
                     leax      F.Size,u
                     lbsr      CompareVal
-                    lblo      statok
+                    blo       statok
                     ldb       #E$EOF
                     coma
-                    lbra      statreturn
+                    bra       statreturn
 statready           clr       R$B,x
-                    lbra      statok
+                    bra       statok
 statfd              ldd       R$Y,x
                     cmpd      #256
-                    lbls      statfdlen@
+                    bls       statfdlen@
                     ldd       #256
 statfdlen@          std       F.Move,u
                     ldd       R$X,x
@@ -1335,10 +1378,10 @@ statfdlen@          std       F.Move,u
                     std       ,x
                     ldd       F.Size+2,u
                     std       2,x
-                    lbra      statfdcopy
+                    bra       statfdcopy
 statfdinf           lda       F.Entry+11,u
                     bita      #$10
-                    lbeq      statbad@
+                    beq       statbad@
                     ldb       R$Y+1,x              low Y is requested byte count
                     clra
                     std       F.Move,u
@@ -1349,12 +1392,12 @@ statfdinf           lda       F.Entry+11,u
                     sta       F.Val+1,u
                     ldd       R$U,x
                     std       F.Val+2,u
-                    lbne      statcookie@
+                    bne       statcookie@
                     tst       F.Val+1,u
-                    lbne      statcookie@
+                    bne       statcookie@
                     leax      F.Entry,u
                     lbsr      MakeFD
-                    lbra      statfdcopy
+                    bra       statfdcopy
 statcookie@         lbsr      DecVal
                     ldb       #5
                     lbsr      ShiftLeft
@@ -1369,19 +1412,19 @@ statcookie@         lbsr      DecVal
                     adcb      #0
                     adca      #0
                     std       F.Val,u
-                    lbcs      statbad@
+                    bcs       statbad@
                     leax      F.Size,u
                     lbsr      CompareVal
-                    lbhs      statbad@
+                    bhs       statbad@
                     lbsr      Locate
                     lbcs      statreturn
                     lda       ,x
-                    lbeq      statbad@
+                    beq       statbad@
                     cmpa      #$E5
-                    lbeq      statbad@
+                    beq       statbad@
                     lda       11,x
                     bita      #8
-                    lbne      statbad@
+                    bne       statbad@
                     lbsr      MakeFD
 statfdcopy          leax      F.Record,u
                     lbsr      MoveOut
@@ -1390,8 +1433,8 @@ statbad@            ldb       #E$IllArg
                     coma
                     lbra      statreturn
 
-* Portable enumeration shares the normal directory position. The pathname
-* scratch area is unused after Open and preserves the name while MakeFD runs.
+* Portable enumeration shares the normal directory position and decodes
+* metadata directly after the name in the output record.
 statreaddir         lda       PD.MOD,y
                     anda      #DIR.+READ.
                     cmpa      #DIR.+READ.
@@ -1401,7 +1444,7 @@ statreaddir         lda       PD.MOD,y
                     lbeq      rdaccess@
                     ldd       R$Y,x
                     cmpd      #RD.NameSize
-                    lbeq      rdcount@
+                    beq       rdcount@
                     cmpd      #RD.Size
                     lbne      rdpath@
 rdcount@            std       F.Move,u
@@ -1426,102 +1469,88 @@ rdnext@             leax      F.Pos,u
                     adca      #0
                     std       F.Pos,u
                     lda       ,x
-                    lbeq      rdnext@
+                    beq       rdnext@
                     anda      #$7F
                     cmpa      #'.
-                    lbeq      rdnext@
+                    beq       rdnext@
                     ldd       F.Move,u
                     cmpd      #RD.NameSize
-                    lbeq      rdcopy@
+                    beq       rdcopy@
+* Decode directly after the name; no pathname scratch or metadata shuffling.
                     pshs      y
-                    leay      F.Path,u
-                    ldb       #RD.NameSize
-rdsavename@         lda       ,x+
-                    sta       ,y+
-                    decb
-                    lbne      rdsavename@
-* DirectoryRecord left the physical entry's offset and data sector cached.
                     ldd       F.Offset+2,u
                     anda      #1
                     leax      F.Data,u
                     leax      d,x
-                    lbsr      MakeFD
-                    leax      F.Record,u
                     leay      F.Record+RD.Attr,u
-                    ldb       #RD.Size-RD.NameSize
-rdmetadata@         lda       ,x+
-                    sta       ,y+
-                    decb
-                    lbne      rdmetadata@
-                    leax      F.Path,u
-                    leay      F.Record,u
-                    ldb       #RD.NameSize
-rdname@             lda       ,x+
-                    sta       ,y+
-                    decb
-                    lbne      rdname@
+                    ldb       #16
+                    bsr       DecodeFD
                     puls      y
 rdcopy@             leax      F.Record,u
                     lbsr      MoveOut
                     lbra      statreturn
 rdaccess@           ldb       #E$FNA
-                    lbra      rderror@
+                    bra       rderror@
 rdpath@             ldb       #E$BPNam
-                    lbra      rderror@
+                    bra       rderror@
 rdeof@              ldb       #E$EOF
 rderror@            coma
                     lbra      statreturn
 
-* Translate FAT metadata to a synthetic read-only OS-9 FD (no segment list).
-MakeFD              pshs      x,y
-                    leay      F.Meta,u
-                    ldb       #32
-metacopy@           lda       ,x+
-                    sta       ,y+
-                    decb
-                    lbne      metacopy@
-                    leax      F.Record,u
+* Translate a FAT entry to OS-9 metadata. The source is F.Entry or F.Data,
+* never the output record, so it can be decoded directly without a scratch copy.
+* SS.FD clears all 256 bytes; SS.ReadDir clears only its metadata tail.
+MakeFD              pshs      y
+                    leay      F.Record,u
                     clrb
-fdzero@             clr       ,x+
+                    bsr       DecodeFD
+                    puls      y,pc
+* X=FAT entry, Y=output FD base, B=bytes to clear (0 means 256).
+* SS.ReadDir exposes the first 13 FD bytes; creation date occupies unused tail.
+* Preserve X/Y; use the same attributes, size and date decoding for both APIs.
+DecodeFD            pshs      x,y
+fdzero@             clr       ,y+
                     decb
-                    lbne      fdzero@
-                    lda       #READ.+EXEC.+PREAD.+PEXEC.
-                    ldb       F.Meta+11,u
-                    bitb      #$10
-                    lbeq      fdattr@
-                    ora       #DIR.
-fdattr@             sta       F.Record+FD.ATT,u
+                    bne       fdzero@
+                    ldy       2,s
+                    ldb       11,x
+                    lbsr      Attributes
+                    sta       FD.ATT,y
                     lda       #1
-                    sta       F.Record+FD.LNK,u
-                    leax      F.Meta+28,u
-                    lbsr      LE32
-                    leax      F.Record+FD.SIZ,u
-                    lbsr      StoreVal
-                    leax      F.Meta+24,u
-                    leay      F.Record+FD.DAT,u
-                    lbsr      DateToOS9
-                    lda       F.Meta+23,u
+                    sta       FD.LNK,y
+                    ldd       28,x
+                    exg       a,b
+                    std       FD.SIZ+2,y
+                    ldd       30,x
+                    exg       a,b
+                    std       FD.SIZ,y
+                    leax      24,x
+                    leay      FD.DAT,y
+                    bsr       DateToOS9
+                    ldx       ,s
+                    ldy       2,s
+                    lda       23,x
                     lsra
                     lsra
                     lsra
-                    sta       F.Record+FD.DAT+3,u
-                    lda       F.Meta+23,u
+                    sta       FD.DAT+3,y
+                    lda       23,x
                     anda      #7
                     lsla
                     lsla
                     lsla
-                    sta       F.Record+FD.DAT+4,u
-                    lda       F.Meta+22,u
+                    sta       FD.DAT+4,y
+                    lda       22,x
                     lsra
                     lsra
                     lsra
                     lsra
                     lsra
-                    ora       F.Record+FD.DAT+4,u
-                    sta       F.Record+FD.DAT+4,u
-                    leax      F.Meta+16,u
-                    leay      F.Record+FD.Creat,u
-                    lbsr      DateToOS9
+                    ora       FD.DAT+4,y
+                    sta       FD.DAT+4,y
+                    leax      16,x
+                    leay      FD.Creat,y
+                    bsr       DateToOS9
                     puls      x,y,pc
 DateToOS9           lda       1,x
                     lsra
@@ -1545,6 +1574,7 @@ DateToOS9           lda       1,x
                     anda      #31
                     sta       2,y
                     rts
+                    use       fatwrite.asm
                     emod
 eom                 equ       *
                     end

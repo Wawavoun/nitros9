@@ -1,8 +1,8 @@
                     use       defsfile
-                    use       blkdev.d
+                    use       blkdrv.d
                     mod       eom,name,Drivr+Objct,ReEnt+1,start,BV.Len
                     fcb       $FF       file manager owns path access policy
-name                fcs       /BlkDev/
+name                fcs       /blkdrv/
                     fcb       1
 start               lbra      Init
                     lbra      Read
@@ -17,6 +17,8 @@ Init                pshs      x,y,u
                     clr       BV.Ready,u
                     clr       BV.Lock,u
                     ldd       #0
+                    std       BV.FMPaths,u
+                    clr       V.BUSY,u
                     std       BV.Module,u
                     std       BV.State,u
                     lda       BT.Version,y

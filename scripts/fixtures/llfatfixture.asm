@@ -1,6 +1,6 @@
 * Test-only sparse FAT32 block medium; never touches hardware or accepts writes.
                     use       defsfile
-                    use       blkdev.d
+                    use       blkdrv.d
                     mod       eom,name,Sbrtn+Objct,ReEnt+1,start,0
 name                fcs       /llfatfixture/
                     fcb       1

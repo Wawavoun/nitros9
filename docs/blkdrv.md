@@ -1,11 +1,11 @@
-# BlkDev native-block interface (ABI 1)
+# blkdrv native-block interface (ABI 1)
 
-BlkDev is an experimental OS-9 device driver for a new file manager. It transfers
+blkdrv is an experimental OS-9 device driver for a new file manager. It transfers
 whole device blocks. RBSuper's deblocking serves RBF's 256-byte-sector interface;
-BlkDev does not need that compatibility layer. There is no 256-byte translation,
+blkdrv does not need that compatibility layer. There is no 256-byte translation,
 partition offset, HDB-DOS adjustment, read-modify-write cache, or FAT code here.
 
-The implementation consists of `defs/blkdev.d`, `level1/modules/blkdev.asm`,
+The implementation consists of `defs/blkdrv.d`, `level1/modules/blkdrv.asm`,
 `level1/modules/llmemblk.asm`, and
 `level1/wildbits/modules/llwbsdblk.asm`. Existing RBSuper modules are unchanged.
 These modules do not yet provide a mountable FAT32 device: a file manager and its
@@ -16,14 +16,14 @@ descriptors must be implemented separately.
 From the repository root:
 
 ```sh
-make -C recipes/wildbits/l1 NITROS9DIR="$PWD" blkdev-modules
-make -C recipes/wildbits/l2 NITROS9DIR="$PWD" blkdev-modules
-python3 -m venv /tmp/blkdev-venv
-/tmp/blkdev-venv/bin/pip install MC6809
-/tmp/blkdev-venv/bin/python scripts/test-blkdev.py
+make -C recipes/wildbits/l1 NITROS9DIR="$PWD" blkdrv-modules
+make -C recipes/wildbits/l2 NITROS9DIR="$PWD" blkdrv-modules
+python3 -m venv /tmp/blkdrv-venv
+/tmp/blkdrv-venv/bin/pip install MC6809
+/tmp/blkdrv-venv/bin/python scripts/test-blkdrv.py
 ```
 
-`LWASM` overrides the test assembler executable. Builds produce `blkdev`,
+`LWASM` overrides the test assembler executable. Builds produce `blkdrv`,
 `llwbsdblk`, and `llmemblk` in the recipe's `.mods` directory. They are deliberately
 absent from default boot lists. The tests assemble for Level 1/2 and 6809/6309,
 and execute the 6809 binaries with simulated OS-9 memory/link services. The SD
@@ -50,7 +50,7 @@ success; carry set and B=an OS-9 error means failure. A and other condition flag
 are unspecified. Requests, info records and buffers must be valid system-space
 memory throughout synchronous calls. They must not overlap each other, driver
 state, code, or hardware registers. The caller owns allocation and mapping of
-these objects; BlkDev is not a user-memory validation boundary.
+these objects; blkdrv is not a user-memory validation boundary.
 
 All multibyte interface values are **big endian**. Disk format byte order belongs
 to the file manager. The implemented block size is 512 bytes. Unsupported sizes
@@ -72,9 +72,9 @@ limit of this ABI.
 | 8 | BR.Count | 2 | Number of whole blocks, 1..127 in this implementation |
 | 10 | BR.Buffer | 2 | System-space buffer address |
 | 12 | BR.Bytes | 2 | Available buffer bytes |
-| 14 | BR.Done | 2 | Completed prefix, initialized by BlkDev |
+| 14 | BR.Done | 2 | Completed prefix, initialized by blkdrv |
 
-BlkDev checks the request version, flags, unit, write protection, capacity,
+blkdrv checks the request version, flags, unit, write protection, capacity,
 backend transfer limit, buffer length and address arithmetic. Buffer end must
 not wrap the 16-bit address space. A malformed short request is rejected before
 writing Done. An unacquired lock or unattached device also leaves Done untouched.
@@ -111,7 +111,7 @@ updates or protection against power failure inside a card.
 ## Backend module and configuration
 
 A backend is a `Sbrtn+Objct` module with six **three-byte branch slots** using the
-same order as BlkDev. Immediately after them is the ABI header:
+same order as blkdrv. Immediately after them is the ABI header:
 
 | Offset from execution entry | Contents |
 | ---: | --- |
@@ -120,7 +120,7 @@ same order as BlkDev. Immediately after them is the ABI header:
 | 21 | Byte header length 24 |
 | 22 | Word private-state byte requirement, 1..$FF00 |
 
-The legacy RBSuper ABI is not accepted. BlkDev links the backend, validates the
+The legacy RBSuper ABI is not accepted. blkdrv links the backend, validates the
 header, allocates and zeroes private system memory, then calls Init. Link and
 allocation failures unwind resources. Term attempts Flush and backend Term,
 then releases memory and the module link even if a backend reports an error:
@@ -130,7 +130,7 @@ handle failures while the device is still attached.
 
 Backend calls receive X=request/info (unused for lifecycle/flush), Y=configuration,
 and U=private state. X/Y/U and interrupt masks are preserved. Backends may trust
-BlkDev's transfer validation. They must leave request inputs unchanged and update
+blkdrv's transfer validation. They must leave request inputs unchanged and update
 Done only after each completed block. Error returns must preserve the completed
 prefix. Buffers are not inferred from PD.BUF, and no RBSuper variables are shared.
 
@@ -155,14 +155,14 @@ across aliases after the first descriptor is detached.
 | 8 | BC.Base | 4 | RAM backend sparse test window's first LBA |
 | 12 | BC.FailAfter | 2 | RAM backend failure threshold; $FFFF disables |
 
-Wildbits ignores the RAM fields. A future FAT descriptor should refer to BlkDev
+Wildbits ignores the RAM fields. A future FAT descriptor should refer to blkdrv
 and llwbsdblk and use a consistent hardware port/page identity. This is not an
 RBF descriptor option table and cannot be substituted into an existing RBF path.
 
 ## Ownership and concurrency
 
 IOMan shares static storage for matching driver and hardware-port identities.
-BlkDev's lock lives in that shared storage and covers info lookup, validation,
+blkdrv's lock lives in that shared storage and covers info lookup, validation,
 and the entire backend transfer. Acquisition is atomic with interrupts briefly
 masked; contention returns E$DevBsy without sleeping or changing the existing
 owner's lock. The caller can yield and retry. There is no long interrupt-masked
@@ -174,7 +174,7 @@ Do not attach incompatible aliases. Partition base/length belong in file-manager
 volume state; do not invent different hardware identities for partitions.
 
 **Do not access the same controller concurrently through RBSuper/llwbsd and
-BlkDev/llwbsdblk.** They do not share arbitration or caches. This opt-in backend
+blkdrv/llwbsdblk.** They do not share arbitration or caches. This opt-in backend
 requires exclusive controller ownership; it neither modifies nor claims to
 serialize the legacy driver. Different controllers can be used independently.
 Also avoid concurrent overlapping mounted volumes even if a controller lock
@@ -222,7 +222,7 @@ is a test fixture, not a general mountable disk.
 
 FailAfter=N returns E$Read/E$Write before block N of each request, with Done=N;
 zero fails immediately and $FFFF disables injection. Reaching Count succeeds,
-even if FailAfter equals Count. ReadOnly causes BlkDev to reject writes before
+even if FailAfter equals Count. ReadOnly causes blkdrv to reject writes before
 calling the backend. The test suite checks content round trips, range failures,
 partial transfers, ABI rejection, resource cleanup, and register/interrupt-mask
 preservation in addition to SD protocol behavior.

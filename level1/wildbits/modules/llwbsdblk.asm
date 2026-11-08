@@ -2,7 +2,7 @@
 * SD SPI protocol: SD Association Physical Layer Simplified Specification,
 * sections 5 (CSD) and 7 (SPI). Supports SDSC and SDHC/SDXC, not MMC/SDUC.
                     use       defsfile
-                    use       blkdev.d
+                    use       blkdrv.d
                     org       0
 S.Port              rmb       2
 S.Request           rmb       2

@@ -1,0 +1,19 @@
+dir /pc0
+echo FIRST>/pc0/new.txt
+echo SECOND>+/pc0/new.txt
+list /pc0/new.txt
+copy /pc0/frag.bin /pc0/copy.bin
+cmp /pc0/frag.bin /pc0/copy.bin
+copy /pc0/frag.bin /pc0/gone.bin
+del /pc0/gone.bin
+echo NESTEDWRITE>/pc0/subdir/new.txt
+list /pc0/subdir/new.txt
+echo PCFGUARDSBEGIN
+attr /pc0/new.txt
+dcheck /pc0
+pxd
+pwd
+echo PCFGUARDSEND
+dir /pc0
+pcfshare
+echo PCFWRITEDONE

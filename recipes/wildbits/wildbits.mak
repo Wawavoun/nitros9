@@ -595,15 +595,15 @@ clean:
 .PHONY: all clean libs FORCE
 
 # Experimental native-block ABI. Build explicitly; not included in boot lists.
-.PHONY: blkdev-modules
-blkdev-modules: $(MODDIR)/blkdev $(MODDIR)/llwbsdblk $(MODDIR)/llmemblk
-$(MODDIR)/blkdev $(MODDIR)/llwbsdblk $(MODDIR)/llmemblk: $(DEFSDIR)/blkdev.d defsfile
+.PHONY: blkdrv-modules
+blkdrv-modules: $(MODDIR)/blkdrv $(MODDIR)/llwbsdblk $(MODDIR)/llmemblk
+$(MODDIR)/blkdrv $(MODDIR)/llwbsdblk $(MODDIR)/llmemblk: $(DEFSDIR)/blkdrv.d defsfile
 
 # Read-only FAT32, explicit opt-in descriptor. FAT_BASE/FAT_LENGTH are native LBAs.
 FAT_BASE ?= 0
 FAT_LENGTH ?= 0
 .PHONY: fat32-modules
-fat32-modules: blkdev-modules $(MODDIR)/fatfm $(MODDIR)/fat0
-$(MODDIR)/fatfm: $(DEFSDIR)/blkdev.d $(DEFSDIR)/fat32.d $(DEFSDIR)/readdir.d defsfile
-$(MODDIR)/fat0: fatdesc.asm $(DEFSDIR)/blkdev.d $(DEFSDIR)/fat32.d defsfile FORCE | $(MODDIR)
+fat32-modules: blkdrv-modules $(MODDIR)/pcf $(MODDIR)/pc0
+$(MODDIR)/pcf: $(NITROS9DIR)/level1/modules/fatwrite.asm $(DEFSDIR)/blkdrv.d $(DEFSDIR)/fat32.d $(DEFSDIR)/readdir.d defsfile
+$(MODDIR)/pc0: fatdesc.asm $(DEFSDIR)/blkdrv.d $(DEFSDIR)/fat32.d defsfile FORCE | $(MODDIR)
 	$(AS) $(AFLAGS) $< $(ASOUT)$@ -DFATBase=$(FAT_BASE) -DFATLength=$(FAT_LENGTH)

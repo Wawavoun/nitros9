@@ -1,6 +1,6 @@
 * Deterministic RAM-backed block device. Caller owns the RAM window.
                     use       defsfile
-                    use       blkdev.d
+                    use       blkdrv.d
                     mod       eom,name,Sbrtn+Objct,ReEnt+1,start,0
 name                fcs       /llmemblk/
                     fcb       1

@@ -1,4 +1,4 @@
-* BlkDev ABI 1. All words/longwords are big endian; see docs/blkdev.md.
+* blkdrv ABI 1. All words/longwords are big endian; see docs/blkdrv.md.
 BD.Version          equ       1
 BD.Magic            equ       $4244     'BD'
 BD.Init             equ       0
@@ -62,4 +62,5 @@ BV.Config           rmb       BC.Len
 BV.Lock             rmb       1
 BV.Ready            rmb       1
 BV.Info             rmb       BI.Len
+BV.FMPaths          rmb       2         file-manager open-path list (opaque to driver)
 BV.Len              equ       .

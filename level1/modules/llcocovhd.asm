@@ -1,9 +1,9 @@
-* Read-only BlkDev backend for MAME's CoCo virtual hard disk registers.
+* Read/write blkdrv backend for MAME's CoCo virtual hard disk registers.
 * BC.Port=$FF80, BC.Unit=0/1, BC.Base=inclusive last 512-byte LBA.
-* The emulator has 24-bit 256-byte records: two records per BlkDev block.
-* This backend's 4 GiB ceiling does not restrict the 32-bit BlkDev ABI.
+* The emulator has 24-bit 256-byte records: two records per blkdrv block.
+* This backend's 4 GiB ceiling does not restrict the 32-bit blkdrv ABI.
                     use       defsfile
-                    use       blkdev.d
+                    use       blkdrv.d
                     mod       eom,name,Sbrtn+Objct,ReEnt+1,start,0
 name                fcs       /llcocovhd/
                     fcb       1
@@ -22,6 +22,7 @@ Request             rmb       2
 Destination         rmb       2
 Port                rmb       2
 Unit                rmb       1
+Command             rmb       1
 Half                rmb       1
 StateSize           equ       .
 Init                ldd       BC.Port,y
@@ -42,12 +43,11 @@ Good                clrb
 BadConfig           ldb       #E$IllArg
                     coma
                     rts
-Write               ldb       #E$WP
-                    coma
-                    rts
 Info                lda       BC.Unit,y
                     sta       BI.Unit,x
-                    lda       #BF.ReadOnly|BF.Flush
+                    lda       BC.Flags,y
+                    anda      #BF.ReadOnly
+                    ora       #BF.Flush
                     sta       BI.Flags,x
                     ldd       #512
                     std       BI.BlockSize,x
@@ -59,12 +59,25 @@ Info                lda       BC.Unit,y
                     std       BI.MaxCount,x
                     clrb
                     rts
-Read                pshs      x,y,u
+Read                clra
+                    bra       Transfer
+Write               lda       #1
+Transfer            pshs      x,y,u
+                    sta       Command,u
                     stx       Request,u
                     ldd       BR.Buffer,x
                     std       Destination,u
                     clr       Half,u
-next@               ldy       Port,u
+next@               tst       Command,u
+                    beq       issue@
+                    ldx       Destination,u
+                    tfr       u,y
+                    clrb
+put@                lda       ,x+
+                    sta       ,y+
+                    decb
+                    bne       put@
+issue@              ldy       Port,u
                     lda       Unit,u
                     sta       6,y                 select image every time
                     ldx       Request,u
@@ -77,17 +90,22 @@ next@               ldy       Port,u
                     rola
                     sta       ,y                  24-bit record = LBA*2 + half
                     stu       4,y                 page-aligned bounce buffer, never crosses 8K
-                    clr       3,y                 synchronous emulator read command
+                    lda       Command,u
+                    sta       3,y                 synchronous read/write command
                     lda       3,y
                     bne       failed@
-                    tfr       u,y
                     ldx       Destination,u
+                    tst       Command,u
+                    bne       advance@
+                    tfr       u,y
                     clrb
 copy@               lda       ,y+
                     sta       ,x+
                     decb
                     bne       copy@
-                    stx       Destination,u
+                    bra       copied@
+advance@            leax      256,x
+copied@             stx       Destination,u
                     inc       Half,u
                     lda       Half,u
                     cmpa      #2
@@ -98,6 +116,10 @@ copy@               lda       ,y+
                     clrb
                     puls      x,y,u,pc
 failed@             ldb       #E$Read
+                    tst       Command,u
+                    beq       classify@
+                    ldb       #E$Write
+classify@
                     cmpa      #2
                     beq       notready@
                     cmpa      #255

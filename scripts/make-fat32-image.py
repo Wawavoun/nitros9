@@ -16,6 +16,8 @@ FRAGMENT=bytes((i*73+19)&255 for i in range(1300))
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('image',type=Path)
+    parser.add_argument('--system-root',type=Path,help='Copy an 8.3-named system tree onto FAT32')
+    parser.add_argument('--boot-file',type=Path,help='Install a fragmented root-level OS9Boot')
     args=parser.parse_args()
     args.image.parent.mkdir(parents=True,exist_ok=True)
     args.image.touch()
@@ -35,8 +37,35 @@ def main():
         fs.writebytes('/EMPTY.TXT',b'')
         fs.makedir('/SUBDIR');fs.writebytes('/SUBDIR/NEST.TXT',b'NESTED\r')
         fs.makedir('/SUBDIR/CHILD')
+        if args.boot_file:
+            boot_data=args.boot_file.read_bytes()
+            assert 1024<len(boot_data)<=0xff00
+            # Force the name into a later root-directory cluster.
+            for i in range(20):fs.writebytes(f'/PAD{i:02}.TMP',b'')
+            fs.writebytes('/OS9BOOT',boot_data[:512])
+            fs.writebytes('/BOOTGAP1.TMP',b'1'*512)
+            with fs.openbin('/OS9BOOT','a') as stream:stream.write(boot_data[512:1024])
+            fs.writebytes('/BOOTGAP2.TMP',b'2'*512)
+            with fs.openbin('/OS9BOOT','a') as stream:stream.write(boot_data[1024:])
+            boot_chain=list(fs.fs.get_cluster_chain(fs._get_dir_entry('/OS9BOOT').get_cluster()))
+            assert any(b!=a+1 for a,b in zip(boot_chain,boot_chain[1:])),boot_chain
+            # Retain the filler files: PyFatFS directory compaction can leave
+            # stale live entries beyond the new end marker in a multi-cluster root.
+        if args.system_root:
+            for source in sorted(args.system_root.rglob('*')):
+                relative=source.relative_to(args.system_root)
+                for part in relative.parts:
+                    name,dot,ext=part.partition('.')
+                    assert 1<=len(name)<=8 and len(ext)<=3 and '.' not in ext,relative
+                target='/'+relative.as_posix().upper()
+                if source.is_dir():fs.makedirs(target,recreate=True)
+                else:fs.writebytes(target,source.read_bytes())
     # Reopen independently of the writer's in-memory FAT/directory state.
     with PyFatFS(str(args.image),read_only=True) as fs:
+        if args.boot_file:assert fs.readbytes('/OS9BOOT')==boot_data
+        if args.system_root:
+            for source in args.system_root.rglob('*'):
+                if source.is_file():assert fs.readbytes('/'+source.relative_to(args.system_root).as_posix().upper())==source.read_bytes()
         assert fs.readbytes('/HELLO.TXT')==HELLO
         assert fs.readbytes('/FRAG.BIN')==FRAGMENT
         assert fs.readbytes('/SUBDIR/NEST.TXT')==b'NESTED\r'
@@ -55,6 +84,7 @@ def main():
         for sector in (info,backup+info):
             image.seek(sector*512+488)
             image.write(struct.pack('<II',len(free),free[0]))
-    print(json.dumps({'image':str(args.image),'bytes':SIZE,'fragment_clusters':chain}))
+    print(json.dumps({'image':str(args.image),'bytes':SIZE,'fragment_clusters':chain,
+        'boot_clusters':boot_chain if args.boot_file else None}))
 
 if __name__=='__main__':main()

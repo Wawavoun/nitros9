@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute assembled FAT/BlkDev against sparse but geometrically valid FAT32 media.
+"""Execute assembled FAT/blkdrv against sparse but geometrically valid FAT32 media.
 Requires lwasm and MC6809. --fixture-directory also emits the MAME fixture sources.
 """
 import argparse
@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 logging.disable(logging.CRITICAL)
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('blkdev_tests', ROOT/'scripts/test-blkdev.py')
+spec = importlib.util.spec_from_file_location('blkdrv_tests', ROOT/'scripts/test-blkdrv.py')
 blk = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(blk)
 blk.DRIVER, blk.BACKEND = 0x4000, 0x8000
@@ -23,7 +23,7 @@ def assemble_source(tmp, level, source, name):
     (tmp/'defsfile').write_text(f'Level equ {level}\n use os9.d\n use scf.d\n use rbf.d\n use wildbits.d\n')
     p = subprocess.run([os.environ.get('LWASM', 'lwasm'), '--6809', '--format=os9',
         '--pragma=pcaspcr,nosymbolcase,condundefzero,undefextern,dollarnotlocal,noforwardrefmax',
-        '-I'+str(tmp), '-I'+str(ROOT/'defs'), '-DH6309=0', '-Dwildbits=1', str(source),
+        '-I'+str(tmp), '-I'+str(source.parent), '-I'+str(ROOT/'defs'), '-DH6309=0', '-Dwildbits=1', str(source),
         '-o'+str(tmp/name), '--symbol-dump='+str(tmp/(name+'.sym'))], cwd=tmp, capture_output=True, text=True)
     assert p.returncode == 0, p.stderr
     symbols = {n:int(v,16) for n,v in re.findall(r'^(\S+) (?:EQU|SET) \$([\da-fA-F]+)$', (tmp/(name+'.sym')).read_text(), re.M)}
@@ -154,7 +154,7 @@ class FatMachine(blk.Machine):
         self.word(REGS+self.s['R$X'],PATH if path is not None else OUTPUT)
         self.word(REGS+self.s['R$Y'],count)
         self.byte(REGS+self.s['R$B'],status)
-        if name=='Seek':
+        if name=='Seek' or (name=='SetStat' and status==self.s['SS.Size']):
             self.word(REGS+self.s['R$X'],position>>16)
             self.word(REGS+self.s['R$U'],position&65535)
         if status==self.s['SS.FDInf']:
@@ -194,7 +194,7 @@ class FatMachine(blk.Machine):
 def build(tmp,level,v):
     modules=blk.assemble(tmp,level)
     modules['fixture']=assemble_source(tmp,level,v.fixture(tmp),'llfatfixture')
-    fat=assemble_source(tmp,level,ROOT/'level1/modules/fatfm.asm','fatfm')
+    fat=assemble_source(tmp,level,ROOT/'level1/modules/pcf.asm','pcf')
     return modules,fat
 
 
@@ -202,7 +202,7 @@ def test(tmp,level):
     v=Volume()
     modules,fat=build(tmp,level,v)
     p=FatMachine(modules,fat,v)
-    print('fatfm Level',level,'module',len(fat[0]),'bytes',flush=True)
+    print('pcf Level',level,'module',len(fat[0]),'bytes',flush=True)
     def ok(name,**kw):
         r=p.call(name,**kw)
         assert not r[0],(name,r)
@@ -211,12 +211,12 @@ def test(tmp,level):
         r=p.call(name,**kw)
         assert r[:2]==(1,p.s[code]),(name,r,code)
         return r
-    for suffix in ('', '   ', ', ', ' /fat0/frag.bin'):
-        ok('Open',mode=1,path='/fat0/hello.txt'+suffix)
-        consumed=len('/fat0/hello.txt')+len(suffix)-len(suffix.lstrip(' ,'))
+    for suffix in ('', '   ', ', ', ' /pc0/frag.bin'):
+        ok('Open',mode=1,path='/pc0/hello.txt'+suffix)
+        consumed=len('/pc0/hello.txt')+len(suffix)-len(suffix.lstrip(' ,'))
         assert p.word(REGS+p.s['R$X'])==PATH+consumed,('pathname return',suffix)
         ok('Close')
-    ok('Open',mode=1,path='/fat0/hello.txt')
+    ok('Open',mode=1,path='/pc0/hello.txt')
     ok('Close',close_count=1)
     assert WORK in p.allocations,'duplicated path freed prematurely'
     ok('Read',count=128)
@@ -231,7 +231,7 @@ def test(tmp,level):
     assert p.word(REGS+p.s['R$U'])==len(v.hello)
     ok('Close')
     assert p.allocations==[blk.STATE]
-    ok('Open',mode=1,path='/fat0/frag.bin')
+    ok('Open',mode=1,path='/pc0/frag.bin')
     r=ok('Read',count=2000)
     assert r[2]==len(v.fragment)
     assert p.data(OUTPUT,len(v.fragment))==v.fragment
@@ -240,18 +240,18 @@ def test(tmp,level):
         r=ok('Read',count=33)
         assert p.data(OUTPUT,r[2])==v.fragment[pos:pos+r[2]],pos
     ok('Close')
-    ok('Open',mode=1,path='/fat0/subdir/nest.txt')
+    ok('Open',mode=1,path='/pc0/subdir/nest.txt')
     r=ok('Read',count=32)
     assert p.data(OUTPUT,r[2])==b'NESTED\r'
     ok('Close')
-    ok('ChgDir',mode=1,path='/fat0/subdir')
+    ok('ChgDir',mode=1,path='/pc0/subdir')
     ok('Open',mode=1,path='nest.txt')
     ok('Close')
     ok('ChgDir',mode=1,path='child')
     ok('ChgDir',mode=1,path='...')
     ok('Open',mode=1,path='hello.txt')
     ok('Close')
-    ok('Open',mode=0x81,path='/fat0')
+    ok('Open',mode=0x81,path='/pc0')
     r=ok('Read',count=512)
     assert p.data(OUTPUT,2)==b'.\xae'
     assert p.data(OUTPUT+32,1)==b'\xae'
@@ -262,7 +262,7 @@ def test(tmp,level):
     assert p.data(OUTPUT+3,5)==bytes([126,11,8,12,34])
     ok('Close')
     for count in (32,45):
-        ok('Open',mode=0x81,path='/fat0')
+        ok('Open',mode=0x81,path='/pc0')
         for index,(name,size) in enumerate((('HELLO.TXT',17),('FRAG.BIN',1300),('EMPTY.TXT',0),('SUBDIR',0)),1):
             p.m.load(OUTPUT,b'\x55'*64)
             r=ok('GetStat',status=p.s['SS.ReadDir'],count=count)
@@ -275,6 +275,9 @@ def test(tmp,level):
                 assert int.from_bytes(result[41:45],'big')==size
                 assert result[35:40]==bytes([126,11,8,12,34])
                 assert bool(result[32]&0x80)==(name=='SUBDIR')
+                ok('GetStat',status=p.s['SS.FDInf'],cookie=index,count=16)
+                assert p.data(OUTPUT,13)==result[32:45],'FD and ReadDir metadata differ'
+                assert p.data(OUTPUT+13,3)==bytes([126,11,8])
         err('GetStat','E$EOF',status=p.s['SS.ReadDir'],count=count)
         ok('Seek',position=0)
         ok('GetStat',status=p.s['SS.ReadDir'],count=count)
@@ -284,14 +287,14 @@ def test(tmp,level):
         ok('Seek',position=1)
         err('GetStat','E$BPNam',status=p.s['SS.ReadDir'],count=count)
         ok('Close')
-    ok('Open',mode=0x81,path='/fat0/subdir')
+    ok('Open',mode=0x81,path='/pc0/subdir')
     for name in ('NEST.TXT','CHILD'):
         ok('GetStat',status=p.s['SS.ReadDir'],count=45)
         assert p.data(OUTPUT,len(name))==name[:-1].encode()+bytes([ord(name[-1])|128])
     err('GetStat','E$EOF',status=p.s['SS.ReadDir'],count=32)
     ok('Close')
     if level==2:
-        ok('Open',mode=0x81,path='/fat0')
+        ok('Open',mode=0x81,path='/pc0')
         p.fail_move=True
         err('GetStat','E$IBA',status=p.s['SS.ReadDir'],count=45)
         p.fail_move=False
@@ -299,12 +302,18 @@ def test(tmp,level):
         ok('GetStat',status=p.s['SS.ReadDir'],count=45)
         assert p.data(OUTPUT,9)==b'HELLO.TX\xd4'
         ok('Close')
-    ok('Open',mode=1,path='/fat0/hello.txt')
+    ok('Open',mode=1,path='/pc0/hello.txt')
+    p.m.load(OUTPUT,b'\x55'*257)
+    ok('GetStat',status=p.s['SS.FD'],count=256)
+    assert p.data(OUTPUT+1,2)==bytes(2) and p.byte(OUTPUT+8)==1
+    assert p.data(OUTPUT+13,3)==bytes([126,11,8])
+    assert p.data(OUTPUT+16,240)==bytes(240)
+    assert p.byte(OUTPUT+256)==0x55
     err('GetStat','E$FNA',status=p.s['SS.ReadDir'],count=32)
     err('ReadOnly','E$WP',status=p.s['SS.Rename'])
     ok('Close')
-    err('Open','E$WP',mode=2,path='/fat0/new.txt')
-    err('Open','E$PNNF',mode=1,path='/fat0/missing')
+    err('Open','E$WP',mode=2,path='/pc0/new.txt')
+    err('Open','E$PNNF',mode=1,path='/pc0/missing')
     assert p.allocations==[blk.STATE]
     print('  files, fragmentation, ReadLn, seek, chd, directory view and metadata passed',flush=True)
 
@@ -316,7 +325,7 @@ def extended_tests(tmp,level):
     # Geometry, active FAT selection, superfloppy and non-24-bit device LBAs.
     for base,spc,active in ((0,1,0),(0x01000000,2,1),(2048,4,0)):
         v=Volume(base=base,spc=spc,active=active);p=machine(v)
-        assert p.call('Open',mode=1,path='/fat0/frag.bin')[0]==0
+        assert p.call('Open',mode=1,path='/pc0/frag.bin')[0]==0
         result=p.call('Read',count=len(v.fragment))
         assert result[0]==0 and result[2]==len(v.fragment),(base,spc,result)
         assert p.data(OUTPUT,len(v.fragment))==v.fragment
@@ -344,7 +353,7 @@ def extended_tests(tmp,level):
     root=v.sectors[v.data+(rootcluster-2)]
     root[:32]=v.entry('HELLO.TXT',rootcluster+1,len(v.hello))
     p=machine(v)
-    assert not p.call('ChgDir',mode=1,path='/fat0')[0]
+    assert not p.call('ChgDir',mode=1,path='/pc0')[0]
     assert p.data(0x600+p.s['P$DIO']+2,4)==rootcluster.to_bytes(4,'big')
     assert not p.call('Open',mode=1,path='hello.txt')[0]
     assert not p.call('Read',count=32)[0]
@@ -360,35 +369,35 @@ def extended_tests(tmp,level):
                (32,(0xffffffff).to_bytes(4,'little'))]
     for off,data in mutations:
         v=Volume();v.sectors[v.base][off:off+len(data)]=data;p=machine(v)
-        result=p.call('Open',mode=1,path='/fat0/hello.txt')
+        result=p.call('Open',mode=1,path='/pc0/hello.txt')
         assert result[:2]==(1,p.s['E$BTyp']),(off,result)
         assert p.allocations==[blk.STATE]
     # A fragmented file cannot silently terminate early or follow corrupt links.
     for link in (0,1,0x0ffffff0,0x0ffffff7,0x0fffffff,10,100000):
         v=Volume();v.fat(10,link);p=machine(v)
-        assert not p.call('Open',mode=1,path='/fat0/frag.bin')[0]
+        assert not p.call('Open',mode=1,path='/pc0/frag.bin')[0]
         result=p.call('Read',count=1500)
         assert result[:2]==(1,p.s['E$BTyp']) and result[2]==512,(link,result)
         assert int.from_bytes(p.data(WORK+p.fs['F.Pos'],4),'big')==512
         p.call('Close')
     v=Volume();v.fat(2,2);v.put(2,v.entry('FILL',3,1)*16);p=machine(v)
-    result=p.call('Open',mode=0x81,path='/fat0')
+    result=p.call('Open',mode=0x81,path='/pc0')
     assert result[:2]==(1,p.s['E$BTyp']),result
     assert p.allocations==[blk.STATE]
     # Corruption beyond a valid file's logical EOF is not accessed.
     v=Volume();p=machine(v)
-    assert not p.call('Open',mode=1,path='/fat0/empty.txt')[0]
+    assert not p.call('Open',mode=1,path='/pc0/empty.txt')[0]
     assert p.call('Read',count=0)[:2]==(0,0)
     assert p.call('Read',count=1)[:2]==(1,p.s['E$EOF'])
     p.call('Close')
-    for path in ('/fat0/subdir/nest.txt','/fat0/SUBDIR/../hello.txt','/fat0/subdir/child/.../hello.txt'):
+    for path in ('/pc0/subdir/nest.txt','/pc0/SUBDIR/../hello.txt','/pc0/subdir/child/.../hello.txt'):
         assert not p.call('Open',mode=1,path=path)[0],path
         p.call('Close')
-    assert not p.call('ChgDir',mode=1,path='/fat0/subdir')[0]
+    assert not p.call('ChgDir',mode=1,path='/pc0/subdir')[0]
     cwd=p.data(0x600+p.s['P$DIO'],12)
     assert p.call('ChgDir',mode=1,path='missing')[0]
     assert p.data(0x600+p.s['P$DIO'],12)==cwd
-    assert not p.call('ChgDir',mode=4,path='/fat0/subdir/child')[0]
+    assert not p.call('ChgDir',mode=4,path='/pc0/subdir/child')[0]
     assert p.data(0x600+p.s['P$DIO']+2,4)==(5).to_bytes(4,'big')
     assert p.data(0x600+p.s['P$DIO']+8,4)==(7).to_bytes(4,'big')
     assert not p.call('Open',mode=1,path='nest.txt')[0]
@@ -406,7 +415,7 @@ def extended_tests(tmp,level):
 def boundary_tests(tmp,level):
     def machine(volume):
         modules,fat=build(tmp,level,volume)
-        assert fat[0][fat[1]['name']:fat[1]['name']+5]==b'fatf\xed'
+        assert fat[0][fat[1]['name']:fat[1]['name']+3]==b'pc\xe6'
         return FatMachine(modules,fat,volume)
     def ok(p,name,**kw):
         result=p.call(name,**kw)
@@ -431,7 +440,7 @@ def boundary_tests(tmp,level):
         v.put(2,b''.join(rows[:capacity]));v.put(400,b''.join(rows[capacity:]))
         p=machine(v)
         for count in (32,45):
-            ok(p,'Open',mode=0x81,path='/fat0')
+            ok(p,'Open',mode=0x81,path='/pc0')
             for slot,name,size in expected:
                 ok(p,'GetStat',status=p.s['SS.ReadDir'],count=count)
                 record=p.data(OUTPUT,count)
@@ -450,7 +459,7 @@ def boundary_tests(tmp,level):
             ok(p,'Close')
             assert p.allocations==[blk.STATE]
         _,name,size=expected[-1]
-        ok(p,'Open',mode=1,path='/fat0/'+name.lower())
+        ok(p,'Open',mode=1,path='/pc0/'+name.lower())
         result=ok(p,'Read',count=size+10)
         assert result[2]==size and p.data(OUTPUT,size)==v.fragment[:size]
         ok(p,'Close')
@@ -459,7 +468,7 @@ def boundary_tests(tmp,level):
     v=Volume();payload=b'A'*511+b'\r'+b'B'*511+b'\r'+b'end'
     v.put(10,payload[:512]);v.put(300,payload[512:1024]);v.put(11,payload[1024:])
     v.sectors[v.data][32:64]=v.entry('FRAG.BIN',10,len(payload))
-    p=machine(v);ok(p,'Open',mode=1,path='/fat0/frag.bin')
+    p=machine(v);ok(p,'Open',mode=1,path='/pc0/frag.bin')
     for line in (payload[:512],payload[512:1024],b'end'):
         result=ok(p,'ReadLn',count=2000)
         assert result[2]==len(line) and p.data(OUTPUT,len(line))==line
@@ -471,23 +480,26 @@ def boundary_tests(tmp,level):
         want=payload[pos:].split(b'\r')[0]
         if b'\r' in payload[pos:]:want+=b'\r'
         assert result[2]==len(want) and p.data(OUTPUT,len(want))==want
-    # Dispatch every mutating FM vector, not just its shared error routine.
-    for vector in (0,2,4,7,9,11):
-        error(p,vector,'E$WP',count=32,status=p.s['SS.Rename'])
+    error(p,'Write','E$BMode',count=32)
+    error(p,'WriteLn','E$BMode',count=32)
+    error(p,'SetStat','E$WP',status=p.s['SS.Rename'])
     ok(p,'Close')
+    for vector in (0,4):
+        error(p,vector,'E$WP',mode=2,path='/pc0/hello.txt')
+    error(p,2,'E$WP',path='/pc0/newdir')
 
     # A two-cluster directory cycle is rejected and releases its workspace.
     v=Volume();v.fat(2,400);v.fat(400,2)
     for cluster in (2,400):v.put(cluster,v.entry('FILL',3,1)*16)
-    p=machine(v);error(p,'Open','E$BTyp',mode=0x81,path='/fat0')
+    p=machine(v);error(p,'Open','E$BTyp',mode=0x81,path='/pc0')
     assert p.allocations==[blk.STATE]
     # Repeated opens/closes and descriptor span failure must not leak memory.
     v=Volume();p=machine(v)
     for _ in range(8):
-        ok(p,'Open',mode=1,path='/fat0/hello.txt');ok(p,'Close')
+        ok(p,'Open',mode=1,path='/pc0/hello.txt');ok(p,'Close')
         assert p.allocations==[blk.STATE]
     p.long(blk.DESC+p.fs['FT.Length'],v.total-1)
-    error(p,'Open','E$BTyp',mode=1,path='/fat0/hello.txt')
+    error(p,'Open','E$BTyp',mode=1,path='/pc0/hello.txt')
     assert p.allocations==[blk.STATE]
     print('  directory sector/cluster boundaries, metadata/cookies, line boundaries, all write vectors, two-node cycles and repeated cleanup passed',flush=True)
 

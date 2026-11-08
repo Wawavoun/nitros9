@@ -892,6 +892,7 @@ DT.SBF              EQU       3                   Sequential Block File Manager
 DT.NFM              EQU       4                   Network File Manager
 DT.CDFM             EQU       5                   CD-ROM File Manager
 DT.RFM              EQU       6                   Remote File Manager
+DT.PCF              EQU       7                   PC FAT File Manager
 
 *********************
 * CRC Result Constant

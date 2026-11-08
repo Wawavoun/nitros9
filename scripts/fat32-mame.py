@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Boot local OS-9 in CoCo 3 MAME and verify guest FAT/BlkDev results on disk."""
+"""Boot local OS-9 in CoCo 3 MAME and verify guest FAT/blkdrv results on disk."""
 import argparse
 import hashlib
 import re
@@ -15,6 +15,7 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--disk',type=Path,required=True)
     parser.add_argument('--fat-image',type=Path,required=True)
+    parser.add_argument('--fat-boot',action='store_true',help='Remove the floppy OS9Boot and its boot pointer before testing')
     parser.add_argument('--mame',default='mame')
     parser.add_argument('--rompath',default=os.environ.get('MAME_ROMPATH',''))
     parser.add_argument('--seconds',type=int,default=400)
@@ -25,6 +26,12 @@ def main():
     for directory in ('cfg','nvram','snap'):(root/directory).mkdir(exist_ok=True)
     disk=root/'guest.dsk'
     shutil.copyfile(args.disk,disk)
+    if args.fat_boot:
+        subprocess.run(['os9','del',str(disk)+',OS9Boot'],check=True,capture_output=True)
+        # DD.BT (3 bytes) and DD.BSZ (2 bytes): no RBF boot fallback.
+        with disk.open('r+b') as stream:
+            stream.seek(0x15);stream.write(bytes(5))
+        print('Removed floppy OS9Boot and cleared its RBF boot pointer',flush=True)
     media=root/'media.vhd'
     shutil.copyfile(args.fat_image,media)
     def digest(path):
@@ -80,6 +87,7 @@ def main():
     extended=extract('fatdire')
     assert b'ID' in extended and b'Sector' not in extended,'dir did not use the portable interface'
     assert b'NEST.TXT' in extract('fatxdir').upper()
-    print('PASS: real-image OS-9 fatfm/BlkDev open/read/ReadLn, fragmented copy, chd/chx, dir and dir -e',flush=True)
+    if args.fat_boot:print('PASS: OS9Boot loaded from FAT32 with no floppy boot file',flush=True)
+    print('PASS: real-image OS-9 pcf/blkdrv open/read/ReadLn, fragmented copy, chd/chx, dir and dir -e',flush=True)
 
 if __name__=='__main__':main()
