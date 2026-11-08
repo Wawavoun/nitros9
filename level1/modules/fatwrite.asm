@@ -965,19 +965,21 @@ SetStatImpl         pshs      x,y,u
                     ldu       PD.BUF,y
                     stx       F.Regs,u
                     lbsr      Writable
-                    bcs       setreturn@
+                    bcs       SetStatReturn
                     ldx       F.Regs,u
                     ldb       R$B,x
+                    cmpb      #SS.Rename
+                    lbeq      RenameEntry
                     cmpb      #SS.Size
                     beq       SetSize
                     ldb       #E$UnkSvc            PCF does not promise RBF permissions/FD writes
                     coma
-setreturn@          puls      x,y,u,pc
+SetStatReturn       puls      x,y,u,pc
 SetSize             lda       PD.MOD,y
                     bita      #WRITE.
                     lbeq      setmode@
                     lbsr      CanWriteFile
-                    bcs       setreturn@
+                    bcs       SetStatReturn
                     leax      F.Pos,u
                     lbsr      LoadVal
                     leax      F.SavedPos,u
@@ -1061,14 +1063,14 @@ sizerestore@        pshs      b,cc
                     lbsr      StoreVal
                     clr       F.WalkValid,u
                     puls      b,cc
-                    lbcs      setreturn@
+                    lbcs      SetStatReturn
                     lbsr      Flush
-                    lbra      setreturn@
+                    lbra      SetStatReturn
 sizebad@            coma
                     bra       sizerestore@
 setmode@            ldb       #E$BMode
                     coma
-                    lbra      setreturn@
+                    lbra      SetStatReturn
 
 * Determine WriteLn's actual transfer length before modifying the data cache.
 WriteLineCount      tst       F.Line,u
@@ -1349,3 +1351,156 @@ DirectoryRef        pshs      x,y
                     bra       busyerror@
 refok@              clrb
                     puls      x,y,pc
+
+* SS.Rename: two validated 30-byte basenames, on a writable parent directory.
+* F.Record stages the parent's identity (40+6 bytes), source location (6),
+* and canonical new name (11). F.Pos is never changed. No extra workspace.
+RenameEntry         lda       PD.MOD,y
+                    anda      #DIR.+WRITE.
+                    cmpa      #DIR.+WRITE.
+                    lbne      renameaccess@
+                    lda       F.Entry+11,u
+                    bita      #$10
+                    lbeq      renameaccess@
+                    bita      #1
+                    lbne      renameaccess@
+                    ldd       R$Y,x
+                    cmpd      #60
+                    lbne      renamebad@
+                    std       F.Move,u
+                    ldd       R$X,x
+                    std       F.Dest,u
+                    leax      F.Path,u
+                    lbsr      MoveIn
+                    lbcs      SetStatReturn
+                    leax      F.Path+30,u
+                    lbsr      RenameName
+                    lbcs      SetStatReturn
+                    pshs      y
+                    leax      F.Name,u
+                    leay      F.Record+52,u
+                    ldb       #11
+                    lbsr      RenameCopy
+                    puls      y
+                    leax      F.Path,u
+                    lbsr      RenameName
+                    lbcs      SetStatReturn
+* Save parent identity before Lookup adopts the source child.
+                    pshs      y
+                    leax      F.Start,u
+                    leay      F.Record,u
+                    ldb       #40
+                    lbsr      RenameCopy
+                    leax      F.DirLBA,u
+                    ldb       #6
+                    lbsr      RenameCopy
+                    puls      y
+                    lbsr      Lookup
+                    lbcs      renamerestore@
+                    tst       F.HasLFN,u
+                    beq       renamebusy@
+                    ldb       #E$FNA
+                    coma
+                    lbra      renamerestore@
+renamebusy@         lda       F.Entry+11,u
+                    bita      #$10
+                    beq       renamefile@
+                    lbsr      DirectoryBusy
+                    bra       renamechecked@
+renamefile@         lda       #WRITE.
+                    lbsr      CheckSharing
+renamechecked@      lbcs      renamerestore@
+                    pshs      y
+                    leax      F.DirLBA,u
+                    leay      F.Record+46,u
+                    ldb       #6
+                    lbsr      RenameCopy
+                    leax      F.Record+52,u
+                    leay      F.Name,u
+                    ldb       #11
+                    lbsr      RenameCopy
+                    puls      y
+* Search the same parent for collisions. Its cluster, not the child, is used.
+                    leax      F.Record,u
+                    lbsr      LoadVal
+                    leax      F.Start,u
+                    lbsr      StoreVal
+                    lbsr      Lookup
+                    bcs       renamemissing@
+* Same canonical alias (including case-only changes) is a successful no-op.
+                    pshs      y
+                    leax      F.DirLBA,u
+                    leay      F.Record+46,u
+                    ldb       #6
+renamecompare@      lda       ,x+
+                    cmpa      ,y+
+                    bne       renameexists@
+                    decb
+                    bne       renamecompare@
+                    puls      y
+                    clrb
+                    bra       renamerestore@
+renameexists@       puls      y
+                    ldb       #E$CEF
+                    coma
+                    bra       renamerestore@
+renamemissing@      cmpb      #E$PNNF
+                    bne       renameerror@
+                    leax      F.Record+46,u
+                    lbsr      LoadVal
+                    lbsr      ReadData
+                    bcs       renamerestore@
+                    ldd       F.Record+50,u
+                    leax      d,x
+                    pshs      y
+                    leay      F.Record+52,u
+                    ldb       #11
+renamestore@        lda       ,y+
+                    sta       ,x+
+                    decb
+                    bne       renamestore@
+* New short names are uppercase; clear NT lowercase flags, preserve metadata.
+                    lda       1,x
+                    anda      #$E7
+                    sta       1,x
+                    puls      y
+                    lbsr      WriteData
+                    bcs       renamerestore@
+                    lbsr      Flush
+                    bra       renamerestore@
+renameerror@        coma
+renamerestore@      pshs      b,cc,y
+                    leax      F.Record,u
+                    leay      F.Start,u
+                    ldb       #40
+                    bsr       RenameCopy
+                    leay      F.DirLBA,u
+                    ldb       #6
+                    bsr       RenameCopy
+                    clr       F.WalkValid,u
+                    puls      b,cc,y
+                    lbra      SetStatReturn
+renameaccess@       ldb       #E$FNA
+                    coma
+                    lbra      SetStatReturn
+renamebad@          ldb       #E$BPNam
+                    coma
+                    lbra      SetStatReturn
+RenameName          pshs      x
+                    lbsr      RNName
+                    puls      x
+                    bcs       renamenameret@
+                    stx       F.Cursor,u
+                    lbsr      ParseName
+                    bcs       renamenameret@
+                    tst       F.Dots,u
+                    lbne      PathError
+                    clrb
+renamenameret@      rts
+* X source, Y destination, B byte count. Used only with nonoverlapping buffers.
+RenameCopy          lda       ,x+
+                    sta       ,y+
+                    decb
+                    bne       RenameCopy
+                    rts
+                    use       rename-name.d

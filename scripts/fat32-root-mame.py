@@ -48,7 +48,7 @@ def prepare(args):
     assert {'pcf','blkdrv'}<=module_names(boot,lowercase=False),'runtime module names must be lowercase'
     assert 'blkdev' not in names
     assert not names&{'rbf','rb1773','d0','sysgo','shell','grfdrv'},names
-    commands=COMMANDS+(('makdir','del','deldir','attr','dcheck','pwd','pxd','pcfshare','pcfrmdir') if args.write_test else ())
+    commands=COMMANDS+(('makdir','del','deldir','attr','dcheck','pwd','pxd','pcfshare','pcfrmdir','rename','pcfren') if args.write_test else ())
     for name in commands:shutil.copyfile(recipe/'.mods'/name,stage/'CMDS'/name.upper())
     shutil.copyfile(recipe/'.mods/sysgo_dd',stage/'SYSGO')
     lines=(recipe/'commands').read_text().splitlines()
@@ -58,7 +58,9 @@ def prepare(args):
         lines=lines[:-1]+(root/'random-commands').read_text().splitlines()+['echo DONE>/dd/testdone']+lines[-1:]
         disk_script.answers(stage)
         (stage/'REOPEN.CMD').write_bytes(disk_script.script((recipe/'commands-reopen').read_text().splitlines()))
-        startup+='if -r /dd/testdone\nshell /dd/reopen.cmd\nelse\nshell /dd/test.cmd\nendif\n'
+        # Replace the startup shell: do not retain its 2 KiB PCF script path
+        # while recursive deldir and the parent/child checks allocate paths.
+        startup+='if -r /dd/testdone\nex shell /dd/reopen.cmd\nelse\nex shell /dd/test.cmd\nendif\n'
         script_names+=['/REOPEN.CMD','/CANCEL.IN','/DELETE.IN']
     else:startup+='shell /dd/test.cmd\n'
     (stage/'TEST.CMD').write_bytes(disk_script.script(lines))
@@ -131,6 +133,8 @@ def run(args):
         assert errors==[],('reopen errors',errors)
         assert b'PCFPERSISTDONE' in console and b'PCFNESTED\r' in console
         assert b'KEEP.TXT' in console and b'INNER' in console
+        assert b'FINALDIR' in console
+        assert console.count(b'HELDDATA\r')==2 and console.count(b'RENAMEKEEP\r')==2
         assert not (logs/'vhd-writes.log').read_text(),'reopen checks wrote to disk'
         with PyFatFS(str(media),read_only=True) as fs:random_test.verify(fs,root)
     elif args.write_test:
@@ -146,9 +150,12 @@ def run(args):
         assert b'PCFSHARE FAIL' not in console
         assert b'PCFRMDIR PASS: 14 parent/child checks' in console
         assert b'PCFRMDIR FAIL' not in console
+        assert b'PCFRENAME PASS: 25 parent/child checks' in console and b'PCFRENAME FAIL' not in console
+        assert b'PCFRENAMEDONE' in console
+        assert console.count(b'PCFRENDENYBEGIN')==16 and console.count(b'PCFRENDENYEND')==16
         assert console.count(b'PCFRMDENYBEGIN')==8 and console.count(b'PCFRMDENYEND')==8
         writes=(logs/'vhd-writes.log').read_text().splitlines()
-        assert writes and not any(line.startswith('GUARD ') for line in writes),'utility guard wrote to disk'
+        assert writes and not any(line.startswith('GUARD ') for line in writes),'rejected operation wrote to disk'
         with PyFatFS(str(media),read_only=True) as fs:
             assert fs.isdir('/TOP') and fs.isdir('/TOP/INNER')
             assert fs.readbytes('/TOP/INNER/KEEP.TXT')==b'PCFNESTED\r'
@@ -159,6 +166,9 @@ def run(args):
             assert set(fs.listdir('/SUBDIR'))=={'NEW.TXT','NEST.TXT','CHILD'}
             assert fs.isdir('/SUBDIR/CHILD') and fs.listdir('/SUBDIR/CHILD')==[]
             random_test.verify(fs,root)
+            assert fs.readbytes('/RNTEST/FINAL.TXT')==b'HELDDATA\r'
+            assert fs.readbytes('/RNTEST/FINALDIR/KEEP.TXT')==b'RENAMEKEEP\r'
+            assert set(fs.listdir('/RNTEST'))=={'FINAL.TXT','FINALDIR'}
             assert not fs.exists('/TREE') and not fs.exists('/SINGLE.TXT')
             assert not fs.exists('/GONE.BIN')
             assert not fs.exists('/RMTEST') and not fs.exists('/EMPTY')
@@ -190,13 +200,15 @@ def run(args):
         'fat_integrity_checked':bool(args.write_test),
         'random_seed':args.seed if args.write_test else None,
         'random_operations':args.steps if args.write_test and not args.reopen else 0,
+        'parent_child_rename_checks':25 if args.write_test and not args.reopen else 0,
         'parent_child_rmdir_checks':14 if args.write_test and not args.reopen else 0,
         'parent_child_sharing_checks':13 if args.write_test and not args.reopen else 0},indent=2))
+    if args.write_test and not args.reopen:print('PASS: 25 parent/child rename checks; file/directory rename and rejection without disk writes',flush=True)
     if args.write_test and not args.reopen:print('PASS: 14 parent/child directory-removal checks; no writes on rejected removals',flush=True)
     if args.write_test and not args.reopen:print('PASS: 13 parent/child sharing checks, independent read positions, SS.Lock rejected as unsupported',flush=True)
     if args.write_test and not args.reopen:print('PASS: PCF create/write/append/copy/delete; recursive deldir removes nested files and empty directories; attr/dcheck/pxd/pwd rejected without disk writes',flush=True)
     if args.write_test and not args.reopen:print(f'PASS: {args.steps} randomized operations (seed {args.seed}) match the independent host reference',flush=True)
-    if args.reopen:print('PASS: nested directories and file contents persist across a fresh MAME boot; image unchanged',flush=True)
+    if args.reopen:print('PASS: renamed files/directories, nested directories and contents persist across a fresh MAME boot; image unchanged',flush=True)
     print('PASS: FAT32 OS9Boot + /DD, disk-loaded SysGo/shell/GrfDrv/commands, startup and cmp; bootstrap unchanged',flush=True)
 
 def main():

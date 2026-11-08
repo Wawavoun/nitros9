@@ -637,7 +637,14 @@ openvalid@          leax      F.Start,u
 openok@             lda       PD.MOD,y
                     bita      #WRITE.
                     beq       openshare@
-                    lbsr      CanWriteFile
+                    lda       F.Entry+11,u
+                    bita      #$10
+                    beq       openwritefile@
+* Writable directory handles authorize metadata services, never raw writes.
+                    bita      #1
+                    lbne      openaccessfree
+                    bra       openshare@
+openwritefile@      lbsr      CanWriteFile
                     lbcs      openfailed
 openshare@          lbsr      RegisterPath
                     lbcs      openfailed

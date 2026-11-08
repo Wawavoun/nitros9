@@ -11,8 +11,9 @@ and the status calls used by `dir`, `dir -e`, `list` and `copy`. `pcf` implement
 extended metadata (45 bytes), with dot/deleted/long-name entries filtered.
 Enumeration shares the path position and rewinds with Seek to zero. Writable
 descriptors also support create, write, WriteLn, resize, delete, and I$MakDir.
-Empty-directory removal is supported through I$Delete; rename and long-name
-mutations are not implemented. Names use case-insensitive ASCII
+Empty-directory removal is supported through I$Delete. [SS.Rename](ss-rename.md)
+renames files and directories within their existing parent; long-name mutations
+and cross-directory moves are not implemented. Names use case-insensitive ASCII
 8.3 aliases; long-name entries are skipped. Directory reads synthesize OS-9 records and metadata,
 including `.` and `..`. Their 24-bit FD cookies identify directory slots within
 an open directory, not disk addresses or cluster numbers. Raw RBF sector/FD
@@ -241,9 +242,25 @@ run requires exactly four such rejections and no VHD writes during them.
 Level 1 and Level 2 pcf/blkdrv/VHD code: sector-crossing writes, WriteLn,
 zero-filled seek gaps, truncate/extend, reopen, deletion, directory growth,
 and FAT mirrors. Writes are not transactional: interruption or a media error
-partway through metadata updates may require filesystem repair. Initial write
-support is for short-name files; rename and LFN mutation remain
-outside this implementation.
+partway through metadata updates may require filesystem repair. Mutation support uses short 8.3 names for files and directories; LFN mutation
+and cross-directory moves remain outside this implementation.
+
+### Same-directory rename checks
+
+The same recipe runs `pcfren`: 25 parent/child checks covering successful file
+and directory renames, case-only no-ops, collisions, missing sources, invalid
+names/records/modes, held files, duplicated paths, and directories held open or
+as another process's cwd/cxd. Sixteen rejections must perform no disk writes.
+The normal `rename` command then renames a file and a nonempty directory; a fresh
+MAME boot checks the new names, child contents and parent traversal. The entire
+image must remain unchanged during that second boot. `fsck_msdos -n` (or the
+configured FAT checker) runs after each boot.
+
+`make -C recipes/coco3/pcf_write_mame_test check-rename` runs the assembled pcf
+and RBF rename CPU tests and the command exit-status regression. `check-all`
+includes these checks. STARTUP chains into the chosen disk script with `ex shell`
+to release its process and script path before the recursive tests; each distinct
+pcf path otherwise consumes 2048 bytes of limited system memory.
 
 ### Multi-process sharing checks
 

@@ -604,6 +604,6 @@ FAT_BASE ?= 0
 FAT_LENGTH ?= 0
 .PHONY: fat32-modules
 fat32-modules: blkdrv-modules $(MODDIR)/pcf $(MODDIR)/pc0
-$(MODDIR)/pcf: $(NITROS9DIR)/level1/modules/fatwrite.asm $(DEFSDIR)/blkdrv.d $(DEFSDIR)/pcf.d $(DEFSDIR)/readdir.d defsfile
+$(MODDIR)/pcf: $(NITROS9DIR)/level1/modules/fatwrite.asm $(DEFSDIR)/blkdrv.d $(DEFSDIR)/pcf.d $(DEFSDIR)/readdir.d $(DEFSDIR)/rename-name.d defsfile
 $(MODDIR)/pc0: fatdesc.asm $(DEFSDIR)/blkdrv.d $(DEFSDIR)/pcf.d defsfile FORCE | $(MODDIR)
 	$(AS) $(AFLAGS) $< $(ASOUT)$@ -DFATBase=$(FAT_BASE) -DFATLength=$(FAT_LENGTH)

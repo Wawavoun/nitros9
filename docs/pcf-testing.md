@@ -40,7 +40,9 @@ interval. There is no character injection or inter-command keyboard delay.
 ## Disk-resident scripts and interactive answers
 
 Preparation installs `TEST.CMD` and adds `shell /dd/test.cmd` to startup.
-The writable FAT32 startup selects `REOPEN.CMD` when `/dd/testdone` exists;
+The writable FAT32 startup uses `ex shell /dd/test.cmd`, replacing the startup
+shell and releasing its script path to conserve system RAM. It selects
+`ex shell /dd/reopen.cmd` when `/dd/testdone` exists;
 the first script creates that file at the end of its operations. This lets
 the second boot select the persistence checks without host edits to the image.
 The second boot must still leave the entire image hash unchanged.
@@ -62,6 +64,24 @@ a guest completion message alone does not mark a test as passing.
 
 The FAT32 read trace must include the selected script and, on the first
 writable boot, both answer files. `REOPEN.CMD` is checked on the second boot.
+
+## Rename coverage
+
+The FAT32 `check` and `demo` targets include 25 real parent/child `SS.Rename`
+checks. They cover files and directories, case-only names, collision/missing-name
+errors, bad names/records/modes, open and duplicated paths, and directories held
+as another process's cwd/cxd. All 16 rejections must produce zero VHD writes.
+The standard `rename` command then renames a file and a nonempty directory;
+the cold boot verifies their new names, contents, and parent traversal.
+
+```sh
+# CPU-level PCF/RBF rename and command regression tests, included in check-all.
+make -C recipes/coco3/pcf_write_mame_test check-rename
+```
+
+These CPU checks add LFN rejection, parent position and metadata preservation,
+cross-sector collisions, and injected I/O failures. Rename supports short names
+within one parent directory; it does not move entries between directories.
 
 ## Randomized coverage and replay
 

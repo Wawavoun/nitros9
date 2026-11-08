@@ -1,7 +1,9 @@
 # pcf size audit
 
-Current modules with directory creation/removal: **6,855 bytes (Level 2)**
-and **6,844 bytes (Level 1)**. Directory creation added 254 bytes to each;
+Current modules with directory creation/removal and same-directory rename:
+**7,316 bytes (Level 2)** and **7,305 bytes (Level 1)**, for both 6809 and 6309
+builds. SS.Rename adds **461 bytes** to each, with no increase to the **2048-byte**
+per-path workspace. Directory creation added 254 bytes to each;
 empty-directory removal and in-use checks add another 392/394 bytes. The optimization
 breakdown below records the preceding files-only implementation.
 

@@ -44,4 +44,18 @@ dir /pc0
 list /pc0/top/inner/keep.txt
 list /pc0/subdir/nest.txt
 echo PCFRECURSEDONE
+makdir /pc0/rntest/child
+echo HELDDATA>/pc0/rntest/held.txt
+echo RENAMEKEEP>/pc0/rntest/child/keep.txt
+pcfren
+rename /pc0/rntest/held.txt final.txt
+rename /pc0/rntest/child finaldir
+list /dd/rntest/final.txt
+list /dd/rntest/finaldir/keep.txt
+chd /pc0/rntest/finaldir
+chd ..
+list final.txt
+chd /dd
+dir /dd/rntest
+echo PCFRENAMEDONE
 echo PCFWRITEDONE
