@@ -40,7 +40,7 @@ def prepare(args):
     assert {'pcf','blkdrv'}<=module_names(boot,lowercase=False),'runtime module names must be lowercase'
     assert 'blkdev' not in names
     assert not names&{'rbf','rb1773','d0','sysgo','shell','grfdrv'},names
-    commands=COMMANDS+(('del','attr','dcheck','pwd','pxd','pcfshare') if args.write_test else ())
+    commands=COMMANDS+(('del','deldir','attr','dcheck','pwd','pxd','pcfshare') if args.write_test else ())
     for name in commands:shutil.copyfile(recipe/'.mods'/name,stage/'CMDS'/name.upper())
     shutil.copyfile(recipe/'.mods/sysgo_dd',stage/'SYSGO')
     (stage/'STARTUP').write_bytes((recipe/'startup').read_text().replace('\n','\r').encode())
@@ -102,8 +102,8 @@ def run(args):
     assert b'FAT32STARTUPDONE' in startup and b'Module Directory' in startup,'startup did not finish before the interactive shell'
     errors=[int(n) for n in (root/'errors.log').read_text().splitlines()]
     if args.write_test:
-        assert errors==[249]*4,('expected four RBF-only rejections',errors)
-        assert console.count(b'rbf only')==4
+        assert errors==[249]*6,('expected six RBF-only rejections',errors)
+        assert console.count(b'rbf only')==6
         assert b'PCFWRITEDONE' in console
         assert b'PCFSHARE PASS: 13 parent/child checks' in console
         assert b'PCFSHARE FAIL' not in console
@@ -113,6 +113,9 @@ def run(args):
             assert fs.readbytes('/NEW.TXT')==b'FIRST\rSECOND\r'
             assert fs.readbytes('/COPY.BIN')==bytes((i*73+19)&255 for i in range(1300))
             assert fs.readbytes('/SUBDIR/NEW.TXT')==b'NESTEDWRITE\r'
+            assert fs.readbytes('/SUBDIR/NEST.TXT')==b'NESTED\r'
+            assert set(fs.listdir('/SUBDIR'))=={'NEW.TXT','NEST.TXT','CHILD'}
+            assert fs.isdir('/SUBDIR/CHILD') and fs.listdir('/SUBDIR/CHILD')==[]
             assert not fs.exists('/GONE.BIN')
             assert not fs.exists('/SHARE.TXT') and not fs.exists('/OTHER.TXT')
     else:
@@ -134,7 +137,7 @@ def run(args):
         'rbf_only_rejections':console.count(b'rbf only') if args.write_test else 0,
         'parent_child_sharing_checks':13 if args.write_test else 0},indent=2))
     if args.write_test:print('PASS: 13 parent/child sharing checks, independent read positions, SS.Lock rejected as unsupported',flush=True)
-    if args.write_test:print('PASS: PCF create/write/append/copy/delete; attr/dcheck/pxd/pwd rejected without disk writes',flush=True)
+    if args.write_test:print('PASS: PCF create/write/append/copy/delete; attr/dcheck/pxd/pwd/deldir rejected without disk writes; deldir preserves the full subtree',flush=True)
     print('PASS: FAT32 OS9Boot + /DD, disk-loaded SysGo/shell/GrfDrv/commands, startup and cmp; bootstrap unchanged',flush=True)
 
 def main():

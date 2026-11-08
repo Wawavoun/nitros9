@@ -52,7 +52,7 @@ name                fcs       /Deldir/
 
 start               bsr       OpenPath
                     bcs       OpenErr
-                    bsr       GetOpts
+                    lbsr      GetOpts
                     bcc       L002B
                     lbsr      PromptUser
                     bcs       OpenErr
@@ -84,12 +84,16 @@ OpenPath            stx       <parmptr            save parameter pointer
                     os9       I$Open
                     bcs       L005D
                     sta       <fpath
+                    lbsr      RequireRBF
+                    bcs       L0090
                     bra       L0089
 L005D               ldx       <parmptr
                     lda       #DIR.+READ.
                     os9       I$Open
                     bcs       L0090
                     sta       <fpath
+                    lbsr      RequireRBF
+                    bcs       L0090
 L0068               ldx       <parmptr
                     os9       F$PrsNam
                     clra
@@ -316,6 +320,7 @@ L0270               decb
                     bne       L0270
                     rts
 
+                    use       rbfguard.asm
                     emod
 eom                 equ       *
                     end

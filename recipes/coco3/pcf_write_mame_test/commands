@@ -13,6 +13,8 @@ attr /pc0/new.txt
 dcheck /pc0
 pxd
 pwd
+deldir /pc0/subdir
+deldir /dd/subdir
 echo PCFGUARDSEND
 dir /pc0
 pcfshare

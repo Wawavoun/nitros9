@@ -231,10 +231,12 @@ deletes a copy, and creates a file in an existing subdirectory. Shell+
 append syntax is `echo SECOND>+/pc0/new.txt`. The runner independently
 reopens the resulting image and verifies exact file contents and deletion.
 
-`attr`, `dcheck`, `pxd`, and `pwd` check the device type before interpreting
+`attr`, `dcheck`, `pxd`, `pwd`, and `deldir` check the device type before interpreting
 RBF metadata. On pcf they print `rbf only` and return E$BTyp (249). The MAME
-run requires exactly four such rejections and monitors VHD writes throughout
-the rejection sequence, requiring none. These utilities remain RBF-specific;
+run requires exactly six such rejections (including `deldir /pc0/subdir` and
+`deldir /dd/subdir`) and monitors VHD writes throughout the rejection sequence,
+requiring none. Host checks verify that the directory, both files and their
+contents, and its child directory remain intact. These utilities remain RBF-specific;
 `dir` uses the portable SS.ReadDir interface.
 
 `LWASM=lwasm.orig python3 scripts/test-pcf-write.py` also exercises assembled
