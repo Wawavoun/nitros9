@@ -112,9 +112,13 @@ def run(args):
         assert b'KEEP.TXT' in console and b'INNER' in console
         assert not (logs/'vhd-writes.log').read_text(),'reopen checks wrote to disk'
     elif args.write_test:
-        assert errors==[249]*6,('expected six RBF-only rejections',errors)
+        assert errors==[249]*4+[1],('expected four RBF-only rejections and deldir quit',errors)
         assert b'rbf only' not in console,'redundant rejection message remains'
-        assert b'PCFWRITEDONE' in console
+        assert b'PCFWRITEDONE' in console and b'PCFRECURSEDONE' in console
+        assert console.count(b'List directory, delete directory, or quit ?')==6
+        assert console.count(b'PCFDELDENYBEGIN')==1 and console.count(b'PCFDELDENYEND')==1
+        after_quit=console.split(b'PCFDELDENYEND',1)[1]
+        assert all(word in after_quit for word in (b'ROOTFILE\r',b'AFILE\r',b'BFILE\r'))
         assert b'PCFSHARE PASS: 13 parent/child checks' in console
         assert b'PCFSHARE FAIL' not in console
         assert b'PCFRMDIR PASS: 14 parent/child checks' in console
@@ -131,6 +135,7 @@ def run(args):
             assert fs.readbytes('/SUBDIR/NEST.TXT')==b'NESTED\r'
             assert set(fs.listdir('/SUBDIR'))=={'NEW.TXT','NEST.TXT','CHILD'}
             assert fs.isdir('/SUBDIR/CHILD') and fs.listdir('/SUBDIR/CHILD')==[]
+            assert not fs.exists('/TREE') and not fs.exists('/SINGLE.TXT')
             assert not fs.exists('/GONE.BIN')
             assert not fs.exists('/RMTEST') and not fs.exists('/EMPTY')
             assert not fs.exists('/SHARE.TXT') and not fs.exists('/OTHER.TXT')
@@ -152,11 +157,12 @@ def run(args):
     (logs/'result.json').write_text(json.dumps({'passed':True,'resident':manifest['resident'],
         'loaded_files':list(manifest['records']),'floppy_sha256':hashes[0],'fat32_sha256':digest(media),'write_test':args.write_test,'reopen':args.reopen,'errors':errors,
         'non_rbf_rejections':errors.count(249) if args.write_test else 0,
+        'recursive_deldir':bool(args.write_test),
         'parent_child_rmdir_checks':14 if args.write_test and not args.reopen else 0,
         'parent_child_sharing_checks':13 if args.write_test and not args.reopen else 0},indent=2))
     if args.write_test and not args.reopen:print('PASS: 14 parent/child directory-removal checks; no writes on rejected removals',flush=True)
     if args.write_test and not args.reopen:print('PASS: 13 parent/child sharing checks, independent read positions, SS.Lock rejected as unsupported',flush=True)
-    if args.write_test and not args.reopen:print('PASS: PCF create/write/append/copy/delete; attr/dcheck/pxd/pwd/deldir rejected without disk writes; deldir preserves the full subtree',flush=True)
+    if args.write_test and not args.reopen:print('PASS: PCF create/write/append/copy/delete; recursive deldir removes nested files and empty directories; attr/dcheck/pxd/pwd rejected without disk writes',flush=True)
     if args.reopen:print('PASS: nested directories and file contents persist across a fresh MAME boot; image unchanged',flush=True)
     print('PASS: FAT32 OS9Boot + /DD, disk-loaded SysGo/shell/GrfDrv/commands, startup and cmp; bootstrap unchanged',flush=True)
 

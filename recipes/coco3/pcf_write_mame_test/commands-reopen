@@ -6,4 +6,6 @@ chd ..
 dir
 chd /dd
 cmp /pc0/frag.bin /pc0/copy.bin
+dir /pc0
+list /pc0/subdir/nest.txt
 echo PCFPERSISTDONE

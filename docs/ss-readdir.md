@@ -53,7 +53,7 @@ interrupts masked until the full wire transaction has finished. An older
 server ignores the unknown status; the bounded ready timeout returns
 `E$UnkSvc` without sending a stray count into its opcode parser.
 
-The updated `dir` requires a file manager implementing `SS.ReadDir`; there
+The updated `dir` and `deldir` require a file manager implementing `SS.ReadDir`; there
 is deliberately no raw-RBF fallback. RFM additionally requires the matching
 DriveWire server. Existing raw directory and `SS.FDInf` interfaces remain
 available for older programs.
@@ -85,6 +85,10 @@ timeout, EOF/error propagation, and caller-copy errors on both levels.
 The existing rename regression tests also pass. All 6809/6309 variants
 assemble. The DriveWire tests cover server enumeration, metadata failure,
 rewind, fragmented counts, and the serial receive boundary.
+
+`deldir` uses names-only SS.ReadDir records for recursive deletion. It retains
+RBF-specific attribute clearing only for RBF devices; pcf removes directories
+directly. MAME verifies nested FAT32 deletion and cancellation.
 
 Real CoCo validation of ReadDir is still pending; existing running servers
 have not been restarted by this change.

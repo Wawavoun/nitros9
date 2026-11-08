@@ -13,8 +13,6 @@ attr /pc0/new.txt
 dcheck /pc0
 pxd
 pwd
-deldir /pc0/subdir
-deldir /dd/subdir
 echo PCFGUARDSEND
 dir /pc0
 pcfshare
@@ -28,4 +26,29 @@ chd ..
 dir
 chd /dd
 list /dd/top/inner/keep.txt
+makdir /pc0/tree/a/b
+makdir /pc0/tree/empty
+echo ROOTFILE>/pc0/tree/root.txt
+echo AFILE>/pc0/tree/a/a.txt
+echo BFILE>/pc0/tree/a/b/b.txt
+echo PCFDELDENYBEGIN
+deldir /pc0/tree
+l
+y
+q
+echo PCFDELDENYEND
+list /pc0/tree/root.txt
+list /pc0/tree/a/a.txt
+list /pc0/tree/a/b/b.txt
+deldir /dd/tree
+d
+d
+d
+d
+echo SINGLE>/pc0/single.txt
+deldir /pc0/single.txt
+dir /pc0
+list /pc0/top/inner/keep.txt
+list /pc0/subdir/nest.txt
+echo PCFRECURSEDONE
 echo PCFWRITEDONE

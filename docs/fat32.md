@@ -232,13 +232,10 @@ deletes a copy, and creates a file in an existing subdirectory. Shell+
 append syntax is `echo SECOND>+/pc0/new.txt`. The runner independently
 reopens the resulting image and verifies exact file contents and deletion.
 
-`attr`, `dcheck`, `pxd`, `pwd`, and `deldir` check the device type before interpreting
+`attr`, `dcheck`, `pxd`, and `pwd` check the device type before interpreting
 RBF metadata. On pcf they return E$BTyp (249) without an extra message. The MAME
-run requires exactly six such rejections (including `deldir /pc0/subdir` and
-`deldir /dd/subdir`) and monitors VHD writes throughout the rejection sequence,
-requiring none. Host checks verify that the directory, both files and their
-contents, and its child directory remain intact. These utilities remain RBF-specific;
-`dir` uses the portable SS.ReadDir interface.
+run requires exactly four such rejections and no VHD writes during them.
+`dir` and `deldir` enumerate through the portable SS.ReadDir interface.
 
 `LWASM=lwasm.orig python3 scripts/test-pcf-write.py` also exercises assembled
 Level 1 and Level 2 pcf/blkdrv/VHD code: sector-crossing writes, WriteLn,
@@ -304,8 +301,8 @@ is saved in `.fat-root/reopen/`.
 
 The CPU suite checks nested dot-cluster values, parent traversal, duplicate and
 missing-parent errors, read-only rejection, and cleanup after first/second-half
-failures while writing an unpublished child's dot entries. The RBF-specific recursive `deldir` command retains its E$BTyp guard on pcf
-devices; use `del` to remove an empty directory.
+failures while writing an unpublished child's dot entries. Use `del` to remove
+an empty directory, or `deldir` for interactive recursive removal.
 
 
 ## Empty-directory removal
@@ -334,5 +331,30 @@ and `del /dd/empty` to exercise the normal commands.
 The CPU tests cover both OS levels, including multi-cluster empty directories
 and rejection of cyclic directory chains without writes. The existing
 nontransactional metadata-update limitation still applies to successful
-removals interrupted by a media error or power loss. Recursive deletion via
-`deldir` remains RBF-only; this change does not bypass that utility's guard.
+removals interrupted by a media error or power loss.
+
+
+## Recursive directory removal
+
+`deldir` uses SS.ReadDir's names-only records and rewinds with I$Seek to zero;
+it no longer reads raw RBF entries or assumes that two dot records come first.
+Directory opens determine the object kind, and changing directories requests
+read access. It retains the existing list/delete/quit prompts at each level.
+Only RBF runs `attr -d` before final deletion; pcf handles directory validation
+and removal directly. Seek, enumeration, child deletion, and ATTR failures
+stop the operation and return their error. Cancellation inside a subtree stops
+the parent too. Recursive deletion is not atomic: earlier successful deletions
+are not undone if a later entry fails or the user quits.
+
+The writable MAME recipe creates `/TREE/A/B` and `/TREE/EMPTY`, with files at
+three levels. It first lists the tree and quits inside `/TREE/A`, requiring no
+writes and checking that all three files remain readable. It then retries
+through `/dd/tree`, confirms four directory prompts, and removes the entire
+tree. It also deletes a regular file through `deldir`. Host checks prove both
+targets absent and unrelated `/TOP` and `/SUBDIR` contents intact; a cold reboot
+reads those surviving files and leaves the image hash unchanged.
+
+`LWASM=lwasm.orig python3 scripts/test-deldir.py` executes the assembled command
+for both OS levels with syscall peers. It checks maximum-length names, RBF's
+ATTR path, regular-file deletion, and propagation of child and enumeration
+errors. The updated command requires SS.ReadDir support in the file manager.
