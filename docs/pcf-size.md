@@ -1,5 +1,9 @@
 # pcf size audit
 
+Current modules with I$MakDir: **6,463 bytes (Level 2)** and **6,450 bytes
+(Level 1)**. Directory creation adds 254 bytes to each. The optimization
+breakdown below records the preceding files-only implementation.
+
 Measured 6809 Level 2 OS-9 modules, including header and CRC. This compares
 this audit's starting source with the branch, workspace-layout, and shared-decoder changes;
 it does not compare against the older read-only implementation in git.

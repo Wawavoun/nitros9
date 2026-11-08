@@ -40,7 +40,7 @@ def prepare(args):
     assert {'pcf','blkdrv'}<=module_names(boot,lowercase=False),'runtime module names must be lowercase'
     assert 'blkdev' not in names
     assert not names&{'rbf','rb1773','d0','sysgo','shell','grfdrv'},names
-    commands=COMMANDS+(('del','deldir','attr','dcheck','pwd','pxd','pcfshare') if args.write_test else ())
+    commands=COMMANDS+(('makdir','del','deldir','attr','dcheck','pwd','pxd','pcfshare') if args.write_test else ())
     for name in commands:shutil.copyfile(recipe/'.mods'/name,stage/'CMDS'/name.upper())
     shutil.copyfile(recipe/'.mods/sysgo_dd',stage/'SYSGO')
     (stage/'STARTUP').write_bytes((recipe/'startup').read_text().replace('\n','\r').encode())
@@ -69,47 +69,59 @@ def prepare(args):
 
 def run(args):
     recipe=args.recipe.resolve();root=args.root.resolve()
+    logs=root/'reopen' if args.reopen else root
+    logs.mkdir(exist_ok=True)
     for folder in ('cfg','nvram','snap'):(root/folder).mkdir(exist_ok=True)
     disk=root/'bootstrap.dsk';media=root/'media.vhd'
-    shutil.copyfile(recipe/'bootstrap.dsk',disk);shutil.copyfile(root/'fat32-root.vhd',media)
+    shutil.copyfile(recipe/'bootstrap.dsk',disk)
+    if args.reopen:
+        assert args.write_test and media.exists(),'reopen requires an existing writable-test image'
+    else:shutil.copyfile(root/'fat32-root.vhd',media)
     hashes=(digest(disk),digest(media))
-    commands=(recipe/'commands').read_text().splitlines()
+    commands=(recipe/('commands-reopen' if args.reopen else 'commands')).read_text().splitlines()
     lua='commands={\n'+''.join(' '+json.dumps(c+'\n')+',\n' for c in commands if c)+'}\n'
-    lua+='snapshot_path='+json.dumps(str(root/'screen.png'))+'\n'
-    lua+='console_path='+json.dumps(str(root/'console.log'))+'\n'
-    lua+='writes_path='+json.dumps(str(root/'vhd-writes.log'))+'\n'
-    lua+='errors_path='+json.dumps(str(root/'errors.log'))+'\n'
-    lua+='reads_path='+json.dumps(str(root/'vhd-reads.log'))+'\n'
+    lua+='snapshot_path='+json.dumps(str(logs/'screen.png'))+'\n'
+    lua+='console_path='+json.dumps(str(logs/'console.log'))+'\n'
+    lua+='writes_path='+json.dumps(str(logs/'vhd-writes.log'))+'\n'
+    lua+='errors_path='+json.dumps(str(logs/'errors.log'))+'\n'
+    lua+='reads_path='+json.dumps(str(logs/'vhd-reads.log'))+'\n'
     lua+=(ROOT/'scripts/fat32-root-mame.lua').read_text()+'\n'
     lua+=(ROOT/'scripts/fat32-mame.lua').read_text()
-    (root/'run.lua').write_text(lua)
+    (logs/'run.lua').write_text(lua)
     cmd=[args.mame,'coco3','-rompath',args.rompath,'-skip_gameinfo','-cfg_directory',str(root/'cfg'),
         '-nvram_directory',str(root/'nvram'),'-snapshot_directory',str(root/'snap'),'-ram','512K',
         '-ext','fdc,bios=v11','-ext:fdc:wd17xx:0','525qd','-flop1',str(disk),'-hard1',str(media),
-        '-autoboot_delay','3','-autoboot_script',str(root/'run.lua'),'-seconds_to_run',str(args.seconds),
+        '-autoboot_delay','3','-autoboot_script',str(logs/'run.lua'),'-seconds_to_run',str(args.seconds),
         '-video','none','-sound','none','-nothrottle']
     if args.video:
         args.video.parent.mkdir(parents=True,exist_ok=True)
         cmd+=['-aviwrite',str(args.video.resolve()),'-snapsize','640x480']
     print('Booting with FAT32 /DD and kernel-track-only floppy:',root,flush=True)
-    with (root/'mame.log').open('w') as log:
+    with (logs/'mame.log').open('w') as log:
         subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT,check=True,timeout=args.seconds+60)
     assert hashes[0]==digest(disk),'bootstrap floppy changed'
-    if not args.write_test:assert hashes[1]==digest(media),'read-only FAT32 image changed'
-    console=(root/'console.log').read_bytes()
-    (root/'console.txt').write_bytes(console.replace(b'\r',b'\n'))
+    if args.reopen or not args.write_test:assert hashes[1]==digest(media),'read-only FAT32 image changed'
+    console=(logs/'console.log').read_bytes()
+    (logs/'console.txt').write_bytes(console.replace(b'\r',b'\n'))
     startup=console.split(b'Shell+')[0]
     assert b'FAT32STARTUPDONE' in startup and b'Module Directory' in startup,'startup did not finish before the interactive shell'
-    errors=[int(n) for n in (root/'errors.log').read_text().splitlines()]
-    if args.write_test:
+    errors=[int(n) for n in (logs/'errors.log').read_text().splitlines()]
+    if args.reopen:
+        assert errors==[],('reopen errors',errors)
+        assert b'PCFPERSISTDONE' in console and b'PCFNESTED\r' in console
+        assert b'KEEP.TXT' in console and b'INNER' in console
+        assert not (logs/'vhd-writes.log').read_text(),'reopen checks wrote to disk'
+    elif args.write_test:
         assert errors==[249]*6,('expected six RBF-only rejections',errors)
         assert b'rbf only' not in console,'redundant rejection message remains'
         assert b'PCFWRITEDONE' in console
         assert b'PCFSHARE PASS: 13 parent/child checks' in console
         assert b'PCFSHARE FAIL' not in console
-        writes=(root/'vhd-writes.log').read_text().splitlines()
+        writes=(logs/'vhd-writes.log').read_text().splitlines()
         assert writes and not any(line.startswith('GUARD ') for line in writes),'utility guard wrote to disk'
         with PyFatFS(str(media),read_only=True) as fs:
+            assert fs.isdir('/TOP') and fs.isdir('/TOP/INNER')
+            assert fs.readbytes('/TOP/INNER/KEEP.TXT')==b'PCFNESTED\r'
             assert fs.readbytes('/NEW.TXT')==b'FIRST\rSECOND\r'
             assert fs.readbytes('/COPY.BIN')==bytes((i*73+19)&255 for i in range(1300))
             assert fs.readbytes('/SUBDIR/NEW.TXT')==b'NESTEDWRITE\r'
@@ -125,19 +137,21 @@ def run(args):
         assert console.count(b'FIRST\rSECOND\rTAIL')==2 and b'NESTED' in console
         exec_listing=console.split(b'FATROOTRELATIVE',1)[1].split(b'FATROOTEXEC',1)[0]
         assert b'NEST.TXT' in exec_listing and b'CHILD' in exec_listing
-    assert 'FLOPPY EJECTED' in (root/'mame.log').read_text()
+    assert 'FLOPPY EJECTED' in (logs/'mame.log').read_text()
     assert re.search(rb'Bytes compared:\s*00000514',console),console[-2000:]
     assert re.search(rb'Bytes different:\s*00000000',console),console[-2000:]
-    reads={int(n) for n in (root/'vhd-reads.log').read_text().splitlines()}
+    reads={int(n) for n in (logs/'vhd-reads.log').read_text().splitlines()}
     manifest=json.loads((root/'manifest.json').read_text())
     for name,records in manifest['records'].items():
+        if args.reopen and name not in ('/OS9BOOT','/SYSGO','/STARTUP','/CMDS/GRFDRV','/CMDS/SHELL','/CMDS/MDIR','/CMDS/DIR','/CMDS/LIST','/CMDS/CMP'):continue
         assert set(records)<=reads,f'file was not fully read from VHD: {name}'
-    (root/'result.json').write_text(json.dumps({'passed':True,'resident':manifest['resident'],
-        'loaded_files':list(manifest['records']),'floppy_sha256':hashes[0],'fat32_sha256':digest(media),'write_test':args.write_test,'errors':errors,
+    (logs/'result.json').write_text(json.dumps({'passed':True,'resident':manifest['resident'],
+        'loaded_files':list(manifest['records']),'floppy_sha256':hashes[0],'fat32_sha256':digest(media),'write_test':args.write_test,'reopen':args.reopen,'errors':errors,
         'non_rbf_rejections':errors.count(249) if args.write_test else 0,
-        'parent_child_sharing_checks':13 if args.write_test else 0},indent=2))
-    if args.write_test:print('PASS: 13 parent/child sharing checks, independent read positions, SS.Lock rejected as unsupported',flush=True)
-    if args.write_test:print('PASS: PCF create/write/append/copy/delete; attr/dcheck/pxd/pwd/deldir rejected without disk writes; deldir preserves the full subtree',flush=True)
+        'parent_child_sharing_checks':13 if args.write_test and not args.reopen else 0},indent=2))
+    if args.write_test and not args.reopen:print('PASS: 13 parent/child sharing checks, independent read positions, SS.Lock rejected as unsupported',flush=True)
+    if args.write_test and not args.reopen:print('PASS: PCF create/write/append/copy/delete; attr/dcheck/pxd/pwd/deldir rejected without disk writes; deldir preserves the full subtree',flush=True)
+    if args.reopen:print('PASS: nested directories and file contents persist across a fresh MAME boot; image unchanged',flush=True)
     print('PASS: FAT32 OS9Boot + /DD, disk-loaded SysGo/shell/GrfDrv/commands, startup and cmp; bootstrap unchanged',flush=True)
 
 def main():
@@ -146,6 +160,7 @@ def main():
     p.add_argument('--root',type=Path,required=True);p.add_argument('--mame',default='mame')
     p.add_argument('--rompath',default=os.environ.get('MAME_ROMPATH',''));p.add_argument('--seconds',type=int,default=260)
     p.add_argument('--write-test',action='store_true')
+    p.add_argument('--reopen',action='store_true',help='Boot the previous writable run image without resetting it')
     p.add_argument('--video',type=Path)
     args=p.parse_args();(prepare if args.action=='prepare' else run)(args)
 

@@ -67,6 +67,41 @@ def main():
                 assert ok('Read',count=512)[2]==512
                 assert p.data(f.OUTPUT,512)==v.fragment[offset:offset+512]
                 ok('Close')
+            # Directory children are initialized before the parent entry appears.
+            ok('MkDir',path='/pc0/ONE')
+            ok('MkDir',path='/pc0/ONE/TWO')
+            error('MkDir','E$CEF',path='/pc0/ONE')
+            error('MkDir','E$PNNF',path='/pc0/MISSING/CHILD')
+            error('MkDir','E$PNNF',path='/pc0/HELLO.TXT/CHILD')
+            parents=[0]
+            for path in ('/pc0/ONE','/pc0/ONE/TWO'):
+                ok('Open',mode=0x81,path=path)
+                cluster=int.from_bytes(p.data(f.WORK+p.fs['F.Start'],4),'big')
+                raw=v.sectors[v.data+(cluster-2)*v.spc]
+                def cluster_at(off):
+                    return int.from_bytes(raw[off+20:off+22],'little')*65536+int.from_bytes(raw[off+26:off+28],'little')
+                assert raw[:11]==b'.          ' and raw[32:43]==b'..         '
+                assert raw[11]==raw[43]==0x10
+                assert cluster_at(0)==cluster and cluster_at(32)==parents[-1]
+                assert raw[28:32]==raw[60:64]==bytes(4)
+                if path.endswith('/TWO'):assert raw[64:]==bytes(448)
+                parents.append(cluster);ok('Close')
+            ok('Create',mode=3,path='/pc0/ONE/TWO/NOTE.TXT');put(b'PERSIST\r');ok('Close')
+            ok('ChgDir',mode=1,path='/pc0/ONE/TWO')
+            ok('ChgDir',mode=1,path='..')
+            ok('Open',mode=1,path='TWO/NOTE.TXT');ok('Read',count=32)
+            assert p.data(f.OUTPUT,8)==b'PERSIST\r';ok('Close')
+            ok('ChgDir',mode=1,path='/pc0')
+            # Fail the dot-entry sector write after zeroing and mirrored FAT
+            # allocation; the unpublished child must be reclaimed.
+            for half in (7,8):
+                before={n:bytes(data) for n,data in v.sectors.items() if v.base+32<=n<v.data}
+                p.fail_write=len(p.writes)+half
+                error('MkDir','E$Write',path='/pc0/FAILED')
+                p.fail_write=None
+                error('Open','E$PNNF',mode=0x81,path='/pc0/FAILED')
+                assert all(bytes(v.sectors[n])==data for n,data in before.items()),'directory rollback leaked a FAT allocation'
+                assert p.allocations==[b.STATE]
             payload=bytes((i*37+11)&255 for i in range(1800))
             ok('Create',mode=3,path='/pc0/new.bin')
             assert put(payload)[2]==len(payload)
@@ -98,5 +133,5 @@ def main():
                 if v.base+32<=lba<v.base+32+v.fatsize:
                     assert data==v.sectors.get(lba+v.fatsize,bytearray(512)),('FAT mirrors',lba)
             assert p.allocations==[b.STATE],p.allocations
-            print(f'PASS Level {level}: cache failure/retry/create/read/write/WriteLn/seek gaps/resize/reopen/delete/directory growth/mirrors',flush=True)
+            print(f'PASS Level {level}: mkdir/nested/dot entries/rollback/cache failure/retry/create/read/write/WriteLn/seek gaps/resize/reopen/delete/directory growth/mirrors',flush=True)
 if __name__=='__main__':main()

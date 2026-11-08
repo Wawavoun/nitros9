@@ -10,8 +10,8 @@ and the status calls used by `dir`, `dir -e`, `list` and `copy`. `pcf` implement
 [SS.ReadDir](ss-readdir.md) for the updated `dir`: names-only (32 bytes) and
 extended metadata (45 bytes), with dot/deleted/long-name entries filtered.
 Enumeration shares the path position and rewinds with Seek to zero. Writable
-descriptors also support create, write, WriteLn, resize, and delete. Directory
-creation, rename, and long-name mutations are not implemented. Names use case-insensitive ASCII
+descriptors also support create, write, WriteLn, resize, delete, and I$MakDir.
+Directory removal, rename, and long-name mutations are not implemented. Names use case-insensitive ASCII
 8.3 aliases; long-name entries are skipped. Directory reads synthesize OS-9 records and metadata,
 including `.` and `..`. Their 24-bit FD cookies identify directory slots within
 an open directory, not disk addresses or cluster numbers. Raw RBF sector/FD
@@ -244,7 +244,7 @@ Level 1 and Level 2 pcf/blkdrv/VHD code: sector-crossing writes, WriteLn,
 zero-filled seek gaps, truncate/extend, reopen, deletion, directory growth,
 and FAT mirrors. Writes are not transactional: interruption or a media error
 partway through metadata updates may require filesystem repair. Initial write
-support is for short-name files; mkdir/rmdir, rename, and LFN mutation remain
+support is for short-name files; rmdir, rename, and LFN mutation remain
 outside this implementation.
 
 ### Multi-process sharing checks
@@ -280,3 +280,28 @@ pressure in these configurations remains unresolved. Do not treat these older
 recipes as passing verification for the writable implementation. The validated
 system-disk recipes are `fat_root_mame_test` and `pcf_write_mame_test`, which
 keep `/dd` on FAT32 and omit RBF/floppy drivers from OS9Boot.
+
+
+## Directory creation and cold-boot persistence
+
+`I$MakDir` now creates short-name FAT32 directories; the existing `makdir`
+command can create multiple missing levels, for example `makdir /pc0/top/inner`.
+The file manager allocates and zeroes the new directory cluster, initializes
+`.` and `..` (using cluster zero for a root parent), then publishes the parent
+entry. Dot entries have directory attributes, zero on-disk size, and timestamps.
+Unpublished children are reclaimed on initialization errors when the medium
+continues accepting cleanup writes. Partial metadata writes and failed rollback
+are still subject to the existing nontransactional-write limitation.
+
+The writable MAME `check` now runs twice. The first boot creates nested
+directories and `/TOP/INNER/KEEP.TXT`, verifies traversal and contents, and runs
+the existing write, sharing, and utility rejection checks. A second, fresh MAME
+process boots the same `media.vhd` without rebuilding or resetting it. It lists
+the directories and reads `KEEP.TXT`, while requiring no VHD writes and an
+unchanged image hash. First-run logs stay in `.fat-root/`; second-run evidence
+is saved in `.fat-root/reopen/`.
+
+The CPU suite checks nested dot-cluster values, parent traversal, duplicate and
+missing-parent errors, read-only rejection, and cleanup after first/second-half
+failures while writing an unpublished child's dot entries. Directory removal
+is still unsupported; `deldir` retains its E$BTyp guard on pcf devices.

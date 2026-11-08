@@ -39,6 +39,9 @@ prepare: libs bootstrap.dsk bootfile $(MODDIR)/sysgo_dd $(addprefix $(MODDIR)/,$
 
 check: prepare
 	$(PYTHON) $(NITROS9DIR)/scripts/fat32-root-mame.py run --recipe $(CURDIR) --root $(ROOT_TEST) $(ROOT_TEST_FLAGS) --mame "$(MAME_BINARY)" --rompath "$(MAME_ROMPATH)" --seconds $(TEST_SECONDS) $(if $(MAME_VIDEO),--video "$(MAME_VIDEO)")
+ifeq ($(FAT_WRITE),1)
+	$(PYTHON) $(NITROS9DIR)/scripts/fat32-root-mame.py run --recipe $(CURDIR) --root $(ROOT_TEST) $(ROOT_TEST_FLAGS) --reopen --mame "$(MAME_BINARY)" --rompath "$(MAME_ROMPATH)" --seconds $(TEST_SECONDS)
+endif
 all: prepare
 .PHONY: prepare check
 

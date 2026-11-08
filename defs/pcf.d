@@ -70,6 +70,7 @@ F.Wanted            rmb       4
 F.HintDelta         rmb       1
 F.Sectors           rmb       1
 F.Time              rmb       6
+F.Child             rmb       4                   unpublished directory cluster
 F.Path              rmb       256
 F.Record            rmb       256
                     ifgt      .-$400

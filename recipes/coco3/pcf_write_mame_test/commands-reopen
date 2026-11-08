@@ -1,0 +1,9 @@
+dir /pc0/top
+dir /dd/top/inner
+chd /pc0/top/inner
+list keep.txt
+chd ..
+dir
+chd /dd
+cmp /pc0/frag.bin /pc0/copy.bin
+echo PCFPERSISTDONE

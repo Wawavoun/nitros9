@@ -9,7 +9,7 @@ name                fcs       /pcf/
 * File-manager entry slots are three bytes each; keep these long branches.
 start               lbra      Create
                     lbra      Open
-                    lbra      ReadOnly             MkDir not yet implemented
+                    lbra      MkDir
                     lbra      ChgDir
                     lbra      Delete
                     lbra      Seek

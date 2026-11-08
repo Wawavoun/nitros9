@@ -24,6 +24,7 @@ SECTIONS = (
     ('Write, WriteLn, zero-filled gaps', 'MoveIn'),
     ('Delete and file resizing', 'DeleteImpl'),
     ('WriteLn terminator scan', 'WriteLineCount'),
+    ('Directory creation', 'MkDirImpl'),
     ('Module CRC', '_crc'),
 )
 
@@ -31,6 +32,7 @@ def sizes(path):
     symbols = {n: int(v, 16) for n, v in re.findall(
         r'^(\S+) (?:EQU|SET) \$([\da-fA-F]+)$', path.read_text(), re.M)}
     symbols['_crc'] = symbols['eom'] - 3
+    symbols.setdefault('MkDirImpl', symbols['_crc'])
     starts = [symbols[n] if n else 0 for _, n in SECTIONS] + [symbols['eom']]
     assert starts == sorted(starts), 'section boundaries are out of order'
     return [b-a for a,b in zip(starts,starts[1:])]

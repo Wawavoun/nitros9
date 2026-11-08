@@ -3,6 +3,9 @@
 Create              pshs      x
                     leax      CreateImpl,pcr
                     bra       FMLocked
+MkDir               pshs      x
+                    leax      MkDirImpl,pcr
+                    lbra      FMLocked
 Open                pshs      x
                     leax      OpenImpl,pcr
                     bra       FMLocked
@@ -586,8 +589,11 @@ CreateEntry         lbsr      Writable
                     lbcs      createret@
                     lda       PD.MOD,y
                     bita      #DIR.
+                    beq       createkind@
+                    lda       F.Creating,u
+                    cmpa      #2
                     lbne      AccessError
-                    clr       F.WalkValid,u
+createkind@         clr       F.WalkValid,u
                     clra
                     clrb
                     std       F.Scan,u
@@ -644,7 +650,11 @@ createname@         lda       ,x+
                     bne       createname@
                     puls      y
                     lda       #$20
-                    sta       F.Entry+11,u
+                    ldb       F.Creating,u
+                    cmpb      #2
+                    bne       createattr@
+                    lda       #$10
+createattr@         sta       F.Entry+11,u
                     lbsr      Stamp
                     ldd       F.Entry+24,u
                     std       F.Entry+16,u
@@ -652,7 +662,12 @@ createname@         lda       ,x+
                     ldd       F.Entry+22,u
                     std       F.Entry+14,u
                     puls      x
-                    lbsr      CopyEntryToDisk
+                    lda       F.Creating,u
+                    cmpa      #2
+                    bne       createpublish@
+                    lbsr      NewDirectory
+                    bcs       createret@
+createpublish@      lbsr      CopyEntryToDisk
                     lbsr      WriteData
                     bcs       createret@
                     tst       F.Zero,u
@@ -1081,4 +1096,96 @@ linecountfound@     ldd       F.Move,u
                     inc       F.Stop,u
                     puls      x,y
 linecountok@        clrb
+                    rts
+
+
+* I$MakDir has no persistent open path. Reuse create resolution with a private
+* kind flag, then release the temporary directory path on success or failure.
+MkDirImpl           pshs      x,y,u
+                    lda       PD.MOD,y
+                    pshs      a
+                    lda       #DIR.+READ.
+                    sta       PD.MOD,y
+                    lda       #2
+                    lbsr      OpenBegin
+                    bcs       mkdirreturn@
+                    lbsr      FreePath
+mkdirreturn@        puls      a
+                    sta       PD.MOD,y
+                    puls      x,y,u,pc
+
+* Initialize the child fully before publishing its parent's entry. F.Start is
+* still the parent cluster. Return X pointing at the reloaded parent slot.
+NewDirectory        lbsr      Allocate
+                    lbcs      newdirret@
+                    leax      F.New,u
+                    lbsr      LoadVal
+                    leax      F.Child,u
+                    lbsr      StoreVal
+                    lbsr      ClusterBase
+                    lbcs      newdirundo@
+                    lbsr      ReadData
+                    lbcs      newdirundo@
+                    leax      F.Child,u
+                    lbsr      LoadVal
+                    leax      F.Data,u
+                    lbsr      DotEntry
+                    leax      F.Start,u
+                    lbsr      LoadVal
+                    leax      F.Root,u
+                    lbsr      CompareVal
+                    bne       newdirparent@
+* FAT32 encodes a root parent as cluster zero in '..'.
+                    clra
+                    clrb
+                    std       F.Val,u
+                    std       F.Val+2,u
+newdirparent@       leax      F.Data+32,u
+                    lbsr      DotEntry
+                    lda       #'.
+                    sta       F.Data+33,u
+                    lbsr      WriteData
+                    bcs       newdirundo@
+                    leax      F.Child,u
+                    lbsr      LoadVal
+                    leax      F.Entry,u
+                    bsr       EntryCluster
+                    leax      F.DirLBA,u
+                    lbsr      LoadVal
+                    lbsr      ReadData
+                    bcs       newdirundo@
+                    ldd       F.DirOff,u
+                    leax      d,x
+                    clrb
+newdirret@          rts
+* The child is not reachable yet. Best-effort reclaim preserves the original
+* error; an additional media error during rollback still requires fsck.
+newdirundo@         pshs      b,cc
+                    leax      F.Child,u
+                    lbsr      LoadVal
+                    leax      F.Saved,u
+                    lbsr      StoreVal
+                    lbsr      FreeChain
+                    lbsr      Flush
+                    puls      b,cc,pc
+DotEntry            pshs      x
+                    lbsr      CopyEntryToDisk
+                    puls      x
+                    pshs      x
+                    lda       #C$SPAC
+                    ldb       #11
+dotname@            sta       ,x+
+                    decb
+                    bne       dotname@
+                    puls      x
+                    lda       #'.
+                    sta       ,x
+EntryCluster        lda       F.Val+1,u
+                    sta       20,x
+                    lda       F.Val,u
+                    sta       21,x
+                    lda       F.Val+3,u
+                    sta       26,x
+                    lda       F.Val+2,u
+                    sta       27,x
                     rts

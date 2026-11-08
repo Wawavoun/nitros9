@@ -211,6 +211,8 @@ def test(tmp,level):
         r=p.call(name,**kw)
         assert r[:2]==(1,p.s[code]),(name,r,code)
         return r
+    err('MkDir','E$WP',path='/pc0/NEW.DIR')
+    assert p.allocations==[blk.STATE]
     for suffix in ('', '   ', ', ', ' /pc0/frag.bin'):
         ok('Open',mode=1,path='/pc0/hello.txt'+suffix)
         consumed=len('/pc0/hello.txt')+len(suffix)-len(suffix.lstrip(' ,'))
