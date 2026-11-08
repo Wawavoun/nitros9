@@ -1,4 +1,4 @@
-load utilpak1
+mdir
 echo FAT32 integration checks
 dir /fat0
 dir /fat0 >/dd/fatdir
@@ -16,7 +16,7 @@ chd ...
 list hello.txt >/dd/fatparent
 chd /dd
 chx /fat0/subdir
-dir -x >/dd/fatxdir
+/dd/cmds/dir -x >/dd/fatxdir
 chx /dd/cmds
 echo FAT32DONE >/dd/fatdone
 echo FAT32 checks complete

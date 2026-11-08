@@ -2,6 +2,7 @@
                     use       defsfile
                     use       blkdev.d
                     use       fat32.d
+                    use       readdir.d
                     mod       eom,name,FlMgr+Objct,ReEnt+1,start,0
 name                fcs       /FAT/
                     fcb       1
@@ -1277,6 +1278,8 @@ GetStat             pshs      x,y,u
                     ldu       PD.BUF,y
                     stx       F.Regs,u
                     ldb       R$B,x
+                    cmpb      #SS.ReadDir
+                    lbeq      statreaddir
                     cmpb      #SS.Opt
                     lbeq      statok
                     cmpb      #SS.DevNm
@@ -1385,6 +1388,88 @@ statfdcopy          leax      F.Record,u
                     lbra      statreturn
 statbad@            ldb       #E$IllArg
                     coma
+                    lbra      statreturn
+
+* Portable enumeration shares the normal directory position. The pathname
+* scratch area is unused after Open and preserves the name while MakeFD runs.
+statreaddir         lda       PD.MOD,y
+                    anda      #DIR.+READ.
+                    cmpa      #DIR.+READ.
+                    lbne      rdaccess@
+                    lda       F.Entry+11,u
+                    bita      #$10
+                    lbeq      rdaccess@
+                    ldd       R$Y,x
+                    cmpd      #RD.NameSize
+                    lbeq      rdcount@
+                    cmpd      #RD.Size
+                    lbne      rdpath@
+rdcount@            std       F.Move,u
+                    ldd       R$X,x
+                    std       F.Dest,u
+                    lda       F.Pos+3,u
+                    anda      #31
+                    lbne      rdpath@
+rdnext@             leax      F.Pos,u
+                    lbsr      LoadVal
+                    leax      F.Size,u
+                    lbsr      CompareVal
+                    lbhs      rdeof@
+                    lbsr      DirectoryRecord
+                    lbcs      statreturn
+* Advance even when filtering a slot; a failed caller copy may consume it.
+                    ldd       F.Pos+2,u
+                    addd      #32
+                    std       F.Pos+2,u
+                    ldd       F.Pos,u
+                    adcb      #0
+                    adca      #0
+                    std       F.Pos,u
+                    lda       ,x
+                    lbeq      rdnext@
+                    anda      #$7F
+                    cmpa      #'.
+                    lbeq      rdnext@
+                    ldd       F.Move,u
+                    cmpd      #RD.NameSize
+                    lbeq      rdcopy@
+                    pshs      y
+                    leay      F.Path,u
+                    ldb       #RD.NameSize
+rdsavename@         lda       ,x+
+                    sta       ,y+
+                    decb
+                    lbne      rdsavename@
+* DirectoryRecord left the physical entry's offset and data sector cached.
+                    ldd       F.Offset+2,u
+                    anda      #1
+                    leax      F.Data,u
+                    leax      d,x
+                    lbsr      MakeFD
+                    leax      F.Record,u
+                    leay      F.Record+RD.Attr,u
+                    ldb       #RD.Size-RD.NameSize
+rdmetadata@         lda       ,x+
+                    sta       ,y+
+                    decb
+                    lbne      rdmetadata@
+                    leax      F.Path,u
+                    leay      F.Record,u
+                    ldb       #RD.NameSize
+rdname@             lda       ,x+
+                    sta       ,y+
+                    decb
+                    lbne      rdname@
+                    puls      y
+rdcopy@             leax      F.Record,u
+                    lbsr      MoveOut
+                    lbra      statreturn
+rdaccess@           ldb       #E$FNA
+                    lbra      rderror@
+rdpath@             ldb       #E$BPNam
+                    lbra      rderror@
+rdeof@              ldb       #E$EOF
+rderror@            coma
                     lbra      statreturn
 
 * Translate FAT metadata to a synthetic read-only OS-9 FD (no segment list).

@@ -260,6 +260,48 @@ def test(tmp,level):
     assert int.from_bytes(p.data(OUTPUT+9,4),'big')==len(v.hello)
     assert p.data(OUTPUT+3,5)==bytes([126,11,8,12,34])
     ok('Close')
+    for count in (32,45):
+        ok('Open',mode=0x81,path='/fat0')
+        for index,(name,size) in enumerate((('HELLO.TXT',17),('FRAG.BIN',1300),('EMPTY.TXT',0),('SUBDIR',0)),1):
+            p.m.load(OUTPUT,b'\x55'*64)
+            r=ok('GetStat',status=p.s['SS.ReadDir'],count=count)
+            assert r[2]==count
+            result=p.data(OUTPUT,count)
+            assert result[:len(name)]==name[:-1].encode()+bytes([ord(name[-1])|128])
+            assert int.from_bytes(result[29:32],'big')==index
+            assert p.data(OUTPUT+count,1)==b'\x55'
+            if count==45:
+                assert int.from_bytes(result[41:45],'big')==size
+                assert result[35:40]==bytes([126,11,8,12,34])
+                assert bool(result[32]&0x80)==(name=='SUBDIR')
+        err('GetStat','E$EOF',status=p.s['SS.ReadDir'],count=count)
+        ok('Seek',position=0)
+        ok('GetStat',status=p.s['SS.ReadDir'],count=count)
+        assert p.data(OUTPUT,9)==b'HELLO.TX\xd4'
+        for bad in (0,31,33,44,46,65535):
+            err('GetStat','E$BPNam',status=p.s['SS.ReadDir'],count=bad)
+        ok('Seek',position=1)
+        err('GetStat','E$BPNam',status=p.s['SS.ReadDir'],count=count)
+        ok('Close')
+    ok('Open',mode=0x81,path='/fat0/subdir')
+    for name in ('NEST.TXT','CHILD'):
+        ok('GetStat',status=p.s['SS.ReadDir'],count=45)
+        assert p.data(OUTPUT,len(name))==name[:-1].encode()+bytes([ord(name[-1])|128])
+    err('GetStat','E$EOF',status=p.s['SS.ReadDir'],count=32)
+    ok('Close')
+    if level==2:
+        ok('Open',mode=0x81,path='/fat0')
+        p.fail_move=True
+        err('GetStat','E$IBA',status=p.s['SS.ReadDir'],count=45)
+        p.fail_move=False
+        ok('Seek',position=0)
+        ok('GetStat',status=p.s['SS.ReadDir'],count=45)
+        assert p.data(OUTPUT,9)==b'HELLO.TX\xd4'
+        ok('Close')
+    ok('Open',mode=1,path='/fat0/hello.txt')
+    err('GetStat','E$FNA',status=p.s['SS.ReadDir'],count=32)
+    err('ReadOnly','E$WP',status=p.s['SS.Rename'])
+    ok('Close')
     err('Open','E$WP',mode=2,path='/fat0/new.txt')
     err('Open','E$PNNF',mode=1,path='/fat0/missing')
     assert p.allocations==[blk.STATE]

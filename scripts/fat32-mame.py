@@ -24,13 +24,10 @@ def main():
     shutil.copyfile(args.disk,disk)
     lua=root/'run.lua'
     commands=(ROOT/'recipes/coco3/fat_mame_test/fatauto').read_text().splitlines()
-    # Natural-keyboard posts are asynchronous: leave time for the entire line.
-    events={2700+900*i: command for i,command in enumerate(commands) if command}
-    lua.write_text('emu.keypost("DOS\\n")\nlocal frames=0\nlocal commands={\n'+
-        ''.join(' ['+str(frame)+']='+json.dumps(command+'\n')+',\n' for frame,command in events.items())+
-        '}\nemu.register_frame_done(function()\n frames=frames+1\n'
-        ' if commands[frames] then emu.keypost(commands[frames]) end\n'
-        ' if frames%300==0 then manager.machine.screens[":screen"]:snapshot('+json.dumps(str(root/'screen.png'))+') end\nend)\n')
+    lua.write_text('commands={\n'+
+        ''.join(' '+json.dumps(command+'\n')+',\n' for command in commands if command)+
+        '}\nsnapshot_path='+json.dumps(str(root/'screen.png'))+'\n'+
+        (ROOT/'scripts/fat32-mame.lua').read_text())
     command=[args.mame,'coco3','-rompath',args.rompath,'-skip_gameinfo','-cfg_directory',str(root/'cfg'),
         '-nvram_directory',str(root/'nvram'),'-snapshot_directory',str(root/'snap'),'-ram','512K',
         '-ext','fdc,bios=v11','-ext:fdc:wd17xx:0','525qd','-flop1',str(disk),
@@ -38,7 +35,7 @@ def main():
         '-video','none','-sound','none','-nothrottle']
     if args.video:
         args.video.parent.mkdir(parents=True,exist_ok=True)
-        command += ['-aviwrite',str(args.video.resolve()),'-snapsize','320x240']
+        command += ['-aviwrite',str(args.video.resolve()),'-snapsize','640x480']
     print('Running CoCo 3 MAME; artifacts:',root,flush=True)
     with (root/'mame.log').open('w') as log:
         process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT)
@@ -68,6 +65,8 @@ def main():
         for entry in (b'HELLO.TXT',b'FRAG.BIN',b'EMPTY.TXT',b'SUBDIR'):
             assert entry in data,(name,entry)
         assert b'LFNSLOT' not in data and b'VOLUME' not in data
+    extended=extract('fatdire')
+    assert b'ID' in extended and b'Sector' not in extended,'dir did not use the portable interface'
     assert b'NEST.TXT' in extract('fatxdir').upper()
     print('PASS: real OS-9 FAT/BlkDev open/read/ReadLn, fragmented copy, chd/chx, dir and dir -e',flush=True)
 

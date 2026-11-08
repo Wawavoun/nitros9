@@ -604,6 +604,6 @@ FAT_BASE ?= 0
 FAT_LENGTH ?= 0
 .PHONY: fat32-modules
 fat32-modules: blkdev-modules $(MODDIR)/fat $(MODDIR)/fat0
-$(MODDIR)/fat: $(DEFSDIR)/blkdev.d $(DEFSDIR)/fat32.d defsfile
+$(MODDIR)/fat: $(DEFSDIR)/blkdev.d $(DEFSDIR)/fat32.d $(DEFSDIR)/readdir.d defsfile
 $(MODDIR)/fat0: fatdesc.asm $(DEFSDIR)/blkdev.d $(DEFSDIR)/fat32.d defsfile FORCE | $(MODDIR)
 	$(AS) $(AFLAGS) $< $(ASOUT)$@ -DFATBase=$(FAT_BASE) -DFATLength=$(FAT_LENGTH)
