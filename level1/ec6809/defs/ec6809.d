@@ -91,7 +91,16 @@ IOBASE              equ       $E000
 ; is in.
 
 PIA0Base            equ       SDSLOT*SLOTSIZ+IOBASE
-UARTBase            equ       CONSLOT*SLOTSIZ+IOBASE
+
+* EC-6809: 6850 ACIA console, and the 6522 VIA used by the SD port and the clock.
+UARTBase            equ       $EEA0
+VIA0Base            equ       $EF80
+VIAREGB             equ       0                   ;data reg B (ORB/IRB)
+VIAREGA             equ       1                   ;data reg A (ORA/IRA)
+VIADDRB             equ       2                   ;data dir reg B
+VIADDRA             equ       3                   ;data dir reg A
+VIAIFR              equ       $0D                 ;interrupt flag register
+VIAIER              equ       $0E                 ;interrupt enable register
 
 PIAREGA             equ       0                   ;data reg A
 PIADDRA             equ       0                   ;data dir reg A

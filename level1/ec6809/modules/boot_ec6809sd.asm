@@ -1,7 +1,9 @@
 ********************************************************************
-* Boot - EC-6809 SD Boot module
+* Boot - Corsham SD Boot module
 * Provides HWInit, HWTerm, HWRead which are called by code in
 * "use"d boot_common.asm
+*
+* $Id$
 *
 * Edt/Rev  YYYY/MM/DD  Modified by
 * Comment
@@ -9,44 +11,44 @@
 *          2017/05/01  Darren Atkinson
 * Created.
 
-                    nam       Boot
-                    ttl       EC-6809 SD Boot module
+               nam   Boot
+               ttl   Corsham SD Boot module
 
-                    ifp1
-                    use       defsfile
-                    endc
+               IFP1
+               use  defsfile
+               ENDC
 
-                    org       0
+                org     0
 * Default Boot is from drive 0
-BootDr              set       0
+BootDr  set    0
 
 * Alternate Boot is from drive 1
-                    ifeq      DNum-1
-BootDr              set       1
-                    endc
+   IFEQ        DNum-1
+BootDr  set    1
+   ENDC
 
 * Common booter-required defines
-LSN24BIT            equ       1
-FLOPPY              equ       0
+LSN24BIT       equ       1
+FLOPPY         equ       0
 
 * NOTE: these are U-stack offsets, not DP
-seglist             rmb       2                   pointer to segment list
-blockloc            rmb       2                   pointer to memory requested
-blockimg            rmb       2                   duplicate of the above
-bootsize            rmb       2                   size in bytes
-LSN0Ptr             rmb       2                   In memory LSN0 pointer
-size                equ       .
+seglist        rmb       2                  pointer to segment list
+blockloc       rmb       2                  pointer to memory requested
+blockimg       rmb       2                  duplicate of the above
+bootsize       rmb       2                  size in bytes
+LSN0Ptr        rmb       2                  In memory LSN0 pointer
+size           equ       .
 
 
-tylg                set       Systm+Objct
-atrv                set       ReEnt+rev
-rev                 set       $00
-edition             set       1
+tylg           set       Systm+Objct
+atrv           set       ReEnt+rev
+rev            set       $00
+edition        set       1
 
-                    mod       eom,name,tylg,atrv,start,size
+               mod  eom,name,tylg,atrv,start,size
 
-name                fcs       /Boot/
-                    fcb       edition
+name           fcs       /Boot/
+               fcb       edition
 
 
 *--------------------------------------------------------------------------
@@ -59,17 +61,24 @@ name                fcs       /Boot/
 *       Carry Clear = OK, Set = Error
 *       B  = error (Carry Set)
 *
+bootmsg  fcb $d,$a
+         fcc "Boot Init"
+         fcb $D,$A,0
+
 HWInit
+*
+* Debugging message
+*
+ leax bootmsg,pcr
+ jsr [S.StringOut] 
 ;
 ; Set up the data direction register for port B so that
 ; the DIRECTION and PSTROBE bits are output.
 ;
-                    ldx       #PIA0Base
-                    clr       PIACTLB,x           ;select DDR ...for port B
-                    ldd       #$04*256+DIRECTION|PSTROBE
-                    stb       PIADDRB,x
-                    sta       PIACTLB,x
-                    lbsr      xParSetWrite
+		ldx		#VIA0Base
+		ldb     #DIRECTION|PSTROBE
+		stb     VIADDRB,x
+		lbsr	xParSetWrite
 
 *--------------------------------------------------------------------------
 * HWTerm - Terminate the device
@@ -81,11 +90,11 @@ HWInit
 *       Carry Clear = OK, Set = Error
 *       B = error (Carry Set)
 *
-HWTerm              clrb                          no error
-                    rts
+HWTerm		clrb		no error
+		rts
 
 ***************************************************************************
-                    use       boot_common.asm
+     use  boot_common.asm
 ***************************************************************************
 
 *
@@ -101,7 +110,9 @@ HWTerm              clrb                          no error
 *       Carry Clear = OK, Set = Error
 *
 HWRead
-                    ldy       blockloc,u
+*		lda	#'R
+*		jsr	[S.CharOut]
+		ldy	blockloc,u
 
 ;=====================================================
 ; This is a low level disk function for a real OS to
@@ -118,49 +129,46 @@ HWRead
 ; Returns with C clear on success.  If error, C is set
 ; and A contains the error code.
 ;
-DiskReadLong        lda       #PC_READ_LONG
-                    bsr       xParWriteByte
-                    clra
-                    bsr       xParWriteByte       ;drive
-                    lda       #2                  ;256 byte sectors
-                    bsr       xParWriteByte
+DiskReadLong	lda	#PC_READ_LONG
+		bsr	xParWriteByte
+		clra
+		bsr	xParWriteByte	;drive
+		lda	#2	;256 byte sectors
+		bsr	xParWriteByte
 ;
 ; Now send the four byte sector number.
 ;
-                    clra
-                    bsr       xParWriteByte
-                    tfr       b,a
-                    bsr       xParWriteByte
-                    tfr       x,d
-                    bsr       xParWriteByte
-                    tfr       b,a
-                    bsr       xParWriteByte
+		clra
+		bsr	xParWriteByte
+		tfr	b,a
+		bsr	xParWriteByte
+		tfr	x,d
+		bsr	xParWriteByte
+		tfr	b,a
+		bsr	xParWriteByte
 ;*****************************************************
 ; This sets up for reading from the Arduino.  Sets up
 ; direction registers, clears the direction bit, etc.
 ;
-xParSetRead         ;select   DDR
-                    ldx       #PIA0Base
-                    clr       PIACTLA,x           ;...for port A
-                    clr       PIADDRA,x
-                    lda       #4                  ;select data reg
-                    sta       PIACTLA,x
+xParSetRead		;set A inputs
+		ldx	#VIA0Base
+		clr	VIADDRA,x
 ;
 ; Set direction flag to input, clear ACK bit
 ;
-                    clr       PIAREGB,x
+		clr	VIAREGB,x
 
-                    bsr       xParReadByte        ;response
-                    cmpa      #PR_SECTOR_DATA     ;data?
-                    bne       DiskCerror          ;no
+		bsr	xParReadByte	;response
+		cmpa	#PR_SECTOR_DATA	;data?
+		bne	DiskCerror	;no
 ;
-                    lda       #'.
-                    jsr       [S.CharOut]
-                    clrb                          ;256 bytes of data
-DiskReadLp          bsr       xParReadByte
-                    sta       ,y+
-                    decb
-                    bne       DiskReadLp
+		lda	#'.
+		jsr	[S.CharOut]
+		clrb		;256 bytes of data
+DiskReadLp	bsr	xParReadByte
+		sta	,y+
+		decb
+		bne	DiskReadLp
 ;
 ; All done
 ;
@@ -168,33 +176,30 @@ DiskReadLp          bsr       xParReadByte
 ; This sets up for writing to the Arduino.  Sets up
 ; direction registers, drives the direction bit, etc.
 ;
-xParSetWrite        clra                          ;select DDR
-                    sta       PIACTLA,x           ;...for port A
-                    deca                          ; $FF set bits for output
-                    sta       PIADDRA,x
-                    lda       #4                  ;select data reg
-                    sta       PIACTLA,x
+xParSetWrite	
+		lda #$FF		; $FF set bits for output
+		sta	VIADDRA,x
 ;
 ; Set direction flag to output, clear ACK bit
 ;
-                    lda       #DIRECTION
-                    sta       PIAREGB,x
+		lda	#DIRECTION
+		sta	VIAREGB,x
 
-                    ldx       blockloc,u
+		ldx	blockloc,u
 
-                    clrb
-                    rts
+		clrb
+		rts
 
 ;
 ; Common error handler.  Next byte is the error code
 ; which goes into B, set carry, and exit.
 ;
-DiskCerror          bsr       xParReadByte
-                    lda       #'?
-                    jsr       [S.CharOut]
-                    comb
-                    ldb       #E$Read
-                    rts
+DiskCerror	bsr	xParReadByte
+		lda	#'?
+		jsr	[S.CharOut]
+		comb
+		ldb	#E$Read
+		rts
 
 
 ;*****************************************************
@@ -214,40 +219,40 @@ DiskCerror          bsr       xParReadByte
 ;    6. Wait for ACK to go low, indicating end of
 ;       transfer.
 ;
-xParWriteByte       pshs      b,x                 ;save data
-                    ldx       #PIA0Base
-Parwl22             ldb       PIAREGB,x           ;check status
-                    andb      #ACK
-                    bne       Parwl22             ;wait for ACK to go low
+xParWriteByte	pshs	b,x	;save data
+		ldx	#VIA0Base
+Parwl22		ldb	VIAREGB,x	;check status
+		andb	#ACK
+		bne	Parwl22	;wait for ACK to go low
 ;
 ; Now put the data onto the bus
 ;
-                    sta       PIAREGA,x
+		sta	VIAREGA,x
 ;
 ; Raise the strobe so the Arduino knows there is
 ; new data.
 ;
-                    lda       PIAREGB,x
-                    ora       #PSTROBE
-                    sta       PIAREGB,x
+		lda	VIAREGB,x
+		ora	#PSTROBE
+		sta	VIAREGB,x
 ;
 ; Wait for ACK to go high, indicating the Arduino has
 ; pulled the data and is ready for more.
 ;
-Parwl33             lda       PIAREGB,x
-                    anda      #ACK
-                    beq       Parwl33
+Parwl33		lda	VIAREGB,x
+		anda	#ACK
+		beq	Parwl33
 ;
 ; Now lower the strobe, then wait for the Arduino to
 ; lower ACK.
 ;
-                    lda       PIAREGB,x
-                    anda      #~PSTROBE
-                    sta       PIAREGB,x
-Parwl44             lda       PIAREGB,x
-                    anda      #ACK
-                    bne       Parwl44
-                    puls      b,x,pc
+		lda	VIAREGB,x
+		anda	#~PSTROBE
+		sta	VIAREGB,x
+Parwl44		lda	VIAREGB,x
+		anda	#ACK
+		bne	Parwl44
+		puls	b,x,pc
 
 ;*****************************************************
 ; This reads a byte from the Arduino and returns it in
@@ -266,41 +271,41 @@ Parwl44             lda       PIAREGB,x
 ;    4. Wait for ACK to go low.
 ;    5. Lower PSTROBE.
 ;
-xParReadByte        pshs      a,x
-                    ldx       #PIA0Base
-parloop@            lda       PIAREGB,x
-                    anda      #ACK                ;is their strobe high?
-                    beq       parloop@            ;nope, no data
+xParReadByte	pshs	a,x
+		ldx	#VIA0Base
+parloop@		lda	VIAREGB,x
+		anda	#ACK	;is their strobe high?
+		beq	parloop@	;nope, no data
 ;
 ; Data is available, so grab and save it.
 ;
-                    lda       PIAREGA,x
-                    sta       ,s
+		lda	VIAREGA,x
+		sta	,s
 ;
 ; Now raise our strobe (their ACK), then wait for
 ; them to lower their strobe.
 ;
-                    lda       PIAREGB,x
-                    ora       #PSTROBE
-                    sta       PIAREGB,x
-Parrlp1             lda       PIAREGB,x
-                    anda      #ACK
-                    bne       Parrlp1             ;still active
+		lda	VIAREGB,x
+		ora	#PSTROBE
+		sta	VIAREGB,x
+Parrlp1		lda	VIAREGB,x
+		anda	#ACK
+		bne	Parrlp1	;still active
 ;
 ; Lower our ack, then we're done.
 ;
-                    lda       PIAREGB,x
-                    anda      #~PSTROBE
-                    sta       PIAREGB,x
-                    puls      a,x,pc
+		lda	VIAREGB,x
+		anda	#~PSTROBE
+		sta	VIAREGB,x
+		puls	a,x,pc
 
 
-                    page
+		page
 
-Address             fdb       $0000
+Address        fdb       $0000
 
-                    emod
-eom                 equ       *
-EOMSize             equ       *-Address
+               emod
+eom            equ       *
+EOMSize        equ       *-Address
 
-                    end
+               end

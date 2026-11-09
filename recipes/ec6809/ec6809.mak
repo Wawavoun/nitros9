@@ -189,7 +189,7 @@ $(MODDIR)/h3.dd: rbdesc.asm | $(MODDIR)
 	$(AS) $< $(ASOUT)$@ $(AFLAGS) -DDNum=3
 
 $(MODDIR)/term_sc6850.dt: term_sc6850.asm | $(MODDIR)
-	$(AS) $< $(ASOUT)$@ $(AFLAGS) -DHwBASE=0xE010
+	$(AS) $< $(ASOUT)$@ $(AFLAGS) -DHwBASE=0xEEA0
 
 # Command rules
 $(MODDIR)/pwd: pd.asm | $(MODDIR)

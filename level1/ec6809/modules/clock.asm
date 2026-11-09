@@ -227,12 +227,13 @@ SetTimer
 
 SETIM1
 
-* Tell PIA to enable interrupts
-                    ldx       #PIA0Base
-                    lda       3,x
-                    ora       #$01                *enable interrupts
-                    sta       3,x
-                    lda       2,x                 *clear pending ints
+* Enable the CB1 interrupt from the 6522 and clear pending interrupts.
+                    ldx       #VIA0Base
+                    lda       VIAIER,x
+                    ora       #%10010000          *enable CB1 interrupts
+                    sta       VIAIER,x
+                    lda       #$7F
+                    sta       VIAIFR,x            *clear pending ints
 
 ClkEx
                     puls      cc,d,pc
@@ -308,10 +309,12 @@ ClearInt
                     sta       INT_PENDING_0       clear clock interrupt by writing bit back
                     else
                     ifne      ec6809
-                    tst       PIA0Base+3
-                    bmi       ClearInt            it's a clock interrupt -- clear it
+                    lda       VIA0Base+VIAIFR
+                    anda      #%00010000          test CB1 interrupt bit in IFR
+                    bne       ClearInt            it's a clock interrupt -- clear it
                     jmp       [>D.SvcIRQ]         else service other possible IRQ
-ClearInt            tst       PIA0Base+2          clear clock interrupt by reading register
+ClearInt            lda       #%00010000          clear clock interrupt
+                    sta       VIA0Base+VIAIFR
                     else
                     ifne      atari
                     ifne      USENMI

@@ -63,7 +63,11 @@ edition             set       1
 start               equ       *
                     fcb       $27                 entries in device table
                     fdb       DefProg             offset to program to fork
+                    ifne      f256
+                    fdb       $0000
+                    else
                     fdb       DefDev              offset to default disk device
+                    endc
                     fdb       DefCons             offset to default console device
                     fdb       DefBoot             offset to boot module name
                     fcb       $01                 write protect flag (?)
@@ -79,8 +83,7 @@ start               equ       *
                     fcb       $00                 feature byte #2
                     fdb       OSStr
                     fdb       InstStr
-                    fdb       BuildStr
-                    fcb       0,0                 reserved
+                    fcb       0,0,0,0             reserved
 
                     ifgt      Level-1
 * CC3IO section
@@ -113,23 +116,12 @@ OSStr               equ       *
                     endc
                     fcc       /Level /
                     fcb       '0+Level
-                    ifne      NOS9VER
                     fcc       / V/
-                    fcb       '0+(NOS9VER/10)
-                    fcb       '0+(NOS9VER%10)
+                    fcb       '0+NOS9VER
                     fcc       /./
-                    ifgt      NOS9MAJ/10
-                    fcb       '0+(NOS9MAJ/10)
-                    endc
-                    fcb       '0+(NOS9MAJ%10)
+                    fcb       '0+NOS9MAJ
                     fcc       /./
-                    ifgt      NOS9MAJ/10
-                    fcb       '0+(NOS9MIN/10)
-                    endc
-                    fcb       '0+(NOS9MIN%10)
-                    else
-                    fcc       "-DEV"
-                    endc
+                    fcb       '0+NOS9MIN
                     fcb       0
 
 InstStr             equ       *
@@ -172,22 +164,18 @@ InstStr             equ       *
                     ifne      coco3fpga
                     fcc       "Gary Becker's Coco3FPGA"
                     else
+                    ifne      corsham
+                    fcc       "Corsham 6809"
+                    else
                     ifne      ec6809
-                    fcc       "EC-6809"
+                    fcc       "Elektor EC-6809"
                     else
-                    ifne      wildbits
-                    fcc       "Wildbits"
-                    else
-                    ifne      picothing
-                    fcc       "Pico-Thing"
-                    else
-                    ifne      immunity
-                    fcc       "Color Computer 2 + i-MMU-nity"
+                    ifne      f256
+                    fcc       "Foenix F256"
                     else
                     fcc       "Unknown Machine"
-                    endc                          match IFNE immunity
-                    endc                          match IFNE picothing
-                    endc                          match IFNE wildbits
+                    endc                          match IFNE f256
+                    endc                          match IFNE corsham
                     endc                          match IFNE ec6809
                     endc                          match IFNE coco3fpga
                     endc                          match IFNE mc09
@@ -208,10 +196,7 @@ OSStr               equ       *
 InstStr             equ       *
                     fcb       0                   null-length string
                     endc                          match IFEQ dalpha
-BuildStr
-                    use       buildinfo
-                    fcb       0                   null-length string
-                    
+
                     emod
 eom                 equ       *
                     end

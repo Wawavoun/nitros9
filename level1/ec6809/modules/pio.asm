@@ -1,5 +1,5 @@
 ********************************************************************
-* pio - EC-6809 Arduino Parallel I/O Low Level Subroutine Module
+* pio - Corsham Arduino Parallel I/O Low Level Subroutine Module
 *
 * Edt/Rev  YYYY/MM/DD  Modified by
 * Comment
@@ -8,7 +8,7 @@
 * Started.
 *
                     nam       pio
-                    ttl       EC-6809 Arduino Parallel I/O Low Level Subroutine Module
+                    ttl       Corsham Arduino Parallel I/O Low Level Subroutine Module
 
                     ifp1
                     use       defsfile
@@ -61,11 +61,9 @@ Init
 ; the DIRECTION and PSTROBE bits are output.
 ;
                     pshs      d,x
-                    ldx       #PIA0Base
-                    clr       PIACTLB,x           ;select DDR ...for port B
-                    ldd       #$04*256+DIRECTION|PSTROBE
-                    stb       PIADDRB,x
-                    sta       PIACTLB,x
+                    ldx       #VIA0Base
+                    ldb       #DIRECTION|PSTROBE
+                    stb       VIADDRB,x
                     bsr       xParSetWrite
                     puls      d,x,pc
 
@@ -80,18 +78,15 @@ Init
 ;
 ; All registers preserved
 ;
-xParSetWrite        pshs      d
-                    ldd       #$0004
-                    sta       PIACTLA,x           ; select DDRfor port A
-                    deca                          ; A $00 => $FF
-                    sta       PIADDRA,x
-                    stb       PIACTLA,x           ;select data reg
+xParSetWrite        pshs      a
+                    lda       #$FF
+                    sta       VIADDRA,x
 ;
 ; Set direction flag to output, clear ACK bit
 ;
                     lda       #DIRECTION
-                    sta       PIAREGB,x
-                    puls      d,pc
+                    sta       VIAREGB,x
+                    puls      a,pc
 
                     page
 ;*****************************************************
@@ -103,14 +98,11 @@ xParSetWrite        pshs      d
 ; All registers preserved
 ;
 xParSetRead         pshs      b
-                    ldb       #$04
-                    clr       PIACTLA,x           ;select DDR for port A
-                    clr       PIADDRA,x
-                    stb       PIACTLA,x           ;select data reg
+                    clr       VIADDRA,x
 ;
 ; Set direction flag to input, clear ACK bit
 ;
-                    clr       PIAREGB,x
+                    clr       VIAREGB,x
                     puls      b,pc
 
                     page
@@ -134,9 +126,9 @@ xParSetRead         pshs      b
 ;
 PIAWrite            pshs      b,x,y,u             ;save data
                     tfr       x,u
-                    ldx       #PIA0Base
+                    ldx       #VIA0Base
                     bsr       xParSetWrite
-Parwl22             ldb       PIAREGB,x           ;check status
+Parwl22             ldb       VIAREGB,x           ;check status
                     andb      #ACK
                     bne       Parwl22             ;wait for ACK to go low
 
@@ -144,29 +136,29 @@ Parwl22             ldb       PIAREGB,x           ;check status
 ; Now put the data onto the bus
 ;
 nextbyte@           ldb       ,u+
-                    stb       PIAREGA,x
+                    stb       VIAREGA,x
 ;
 ; Raise the strobe so the Arduino knows there is
 ; new data.
 ;
-                    ldb       PIAREGB,x
+                    ldb       VIAREGB,x
                     orb       #PSTROBE
-                    stb       PIAREGB,x
+                    stb       VIAREGB,x
 ;
 ; Wait for ACK to go high, indicating the Arduino has
 ; pulled the data and is ready for more.
 ;
-Parwl33             ldb       PIAREGB,x
+Parwl33             ldb       VIAREGB,x
                     andb      #ACK
                     beq       Parwl33
 ;
 ; Now lower the strobe, then wait for the Arduino to
 ; lower ACK.
 ;
-                    ldb       PIAREGB,x
+                    ldb       VIAREGB,x
                     andb      #~PSTROBE
-                    stb       PIAREGB,x
-Parwl44             ldb       PIAREGB,x
+                    stb       VIAREGB,x
+Parwl44             ldb       VIAREGB,x
                     andb      #ACK
                     bne       Parwl44
                     leay      -1,y
@@ -195,32 +187,32 @@ Parwl44             ldb       PIAREGB,x
 PIARead
                     pshs      b,x,y,u
                     tfr       x,u
-                    ldx       #PIA0Base
+                    ldx       #VIA0Base
                     bsr       xParSetRead
-rloop@              ldb       PIAREGB,x
+rloop@              ldb       VIAREGB,x
                     andb      #ACK                ;is their strobe high?
                     beq       rloop@              ;nope, no data
 ;
 ; Data is available, so grab and save it.
 ;
-                    ldb       PIAREGA,x
+                    ldb       VIAREGA,x
                     stb       ,u+
 ;
 ; Now raise our strobe (their ACK), then wait for
 ; them to lower their strobe.
 ;
-                    ldb       PIAREGB,x
+                    ldb       VIAREGB,x
                     orb       #PSTROBE
-                    stb       PIAREGB,x
-Parrlp1             ldb       PIAREGB,x
+                    stb       VIAREGB,x
+Parrlp1             ldb       VIAREGB,x
                     andb      #ACK
                     bne       Parrlp1             ;still active
 ;
 ; Lower our ack, then we're done.
 ;
-                    ldb       PIAREGB,x
+                    ldb       VIAREGB,x
                     andb      #~PSTROBE
-                    stb       PIAREGB,x
+                    stb       VIAREGB,x
                     leay      -1,y
                     bne       rloop@
                     puls      b,x,y,u,pc

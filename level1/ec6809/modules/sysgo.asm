@@ -50,7 +50,7 @@ Banner              equ       *
 CrRtn               fcb       C$CR,C$LF
 
                     ifeq      ROM
-                    ifne      NOS9DEV
+                    ifne      NOS9DBG
                     fcc       "**   DEVELOPMENT BUILD   **"
                     fcb       C$CR,C$LF
                     fcc       "** NOT FOR DISTRIBUTION! **"
@@ -85,10 +85,6 @@ ExecDir             fcc       "CMDS"
 
 Shell               fcc       "Shell"
                     fcb       C$CR
-                  IFNE    picothing
-TSMon               fcc       "TSMon"
-                    fcb       C$CR
-                  ENDC
 AutoEx              fcc       "AutoEx"
                     fcb       C$CR
 AutoExPr            fcc       ""
@@ -103,11 +99,7 @@ StartupL            equ       *-Startup
 
 ShellPrm            equ       *
                     ifgt      Level-1
-                  IFNE    picothing
-                    fcc       "i=/term"
-                  ELSE
                     fcc       "i=/1"
-                  ENDC
                     endc
 CRtn                fcb       C$CR
 ShellPL             equ       *-ShellPrm
@@ -117,7 +109,7 @@ ShellPL             equ       *-ShellPrm
 * If no RTC is available, then the soft clock starts at January 1 of the new year.
 DefTime             fcb       85,12,31,23,59,59
 
-                  IFEQ    atari+ec6809+wildbits+picothing
+                    ifeq      atari+corsham+f256+ec6809
                     ifeq      Level-1
 * BASIC reset code (CoCo port only)
 BasicRst            fcb       $55
@@ -210,7 +202,7 @@ SignOn
 
 L0125               equ       *
                     pshs      u,y
-                  IFEQ    atari+ec6809+wildbits+picothing
+                    ifeq      atari+corsham+f256+ec6809
                     ifeq      Level-1
 * Setup BASIC code (CoCo port only)
                     leax      >BasicRst,pcr
@@ -249,7 +241,7 @@ L0151               lda       b,y
 
                     ifeq      ROM
 * Fork shell startup here
-                  IFEQ    atari+ec6809+wildbits+picothing
+                    ifeq      atari+corsham+f256+ec6809
 * Added 12/14/03: If SHIFT is held down, startup is not run (CoCo only)
                     lda       #$01                standard output
                     ldb       #SS.KySns
@@ -279,19 +271,6 @@ DoAuto              leax      >AutoEx,pcr
 
 L0186               equ       *
                     puls      u,y
-                  IFNE    picothing
-* Chain into TSMon monitoring the inherited console paths; it forks
-* LOGIN on each wake-up, so the console gets a login prompt instead of
-* an unauthenticated shell.  Parameter line is empty (CR only), which
-* tells TSMon to use its stdin rather than open a named device.
-FrkShell            leax      >CRtn,pcr copy the empty parameter line
-                    leay      ,u        point to the parameter area
-                    lda       ,x        get the CR byte
-                    sta       ,y        place it in the parameter area
-                    leax      >TSMon,pcr point to the TSMon module name to fork
-                    ldd       #256      memory size (B not zero on the L1 re-fork path)
-                    ldy       #1        parameter length: just the CR
-                  ELSE
 FrkShell            leax      >ShellPrm,pcr
                     leay      ,u
                     ldb       #ShellPL
@@ -303,7 +282,6 @@ L0190               lda       ,x+
                     leax      >Shell,pcr
                     lda       #$01                D = 256 (B already 0 from above)
                     ldy       #ShellPL
-                  ENDC
                     ifgt      Level-1
                     os9       F$Chain             Level 2/3. Should not return..
                     ldb       #$06                it did! Fatal. Load error code
