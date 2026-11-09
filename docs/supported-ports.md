@@ -13,6 +13,7 @@ The maintained source tree currently includes these ports:
 | Dragon Alpha | Level 1 | 6809 |
 | Atari with Liber809 | Level 1 | 6809 |
 | Corsham 6809 SS-50 | Level 1 | 6809 |
+| EC-6809 | Level 1 | 6809 |
 | Wildbits 6809 | Levels 1 and 2 | 6809 |
 | Pico-Thing | Levels 1 and 2 | 6809 and 6309 |
 
