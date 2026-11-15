@@ -312,8 +312,15 @@ copy@               ldd       ,y++      ; get vector bytes
                   IFNE    ec6809 ; begin conditional assembly for ec6809
 *[[[ EC6809 port
 * EC-6809 needs $0000-$04FF and $E000-$EFFF reserved.
+* The I/O board EPROM also keeps its SD and I2C variables at $DE6B-$DE7F
+* and tests the FLEX spooler flag at $CC34, so pages $CC and $DE stay
+* out of the free pool. The booter clears $CC34.
                     ldb       #%11111000 ; load B from #%11111000
                     stb       ,x        ; mark $0000-$04FF as allocated
+                    ldb       #%00001000 ; page $CC is bit 3 of byte $19
+                    stb       $19,x     ; mark $CC00-$CCFF as allocated
+                    ldb       #%00000010 ; page $DE is bit 1 of byte $1B
+                    stb       $1B,x     ; mark $DE00-$DEFF as allocated
                     ldb       #%11111111 ; load B from #%11111111
                     stb       $1C,x     ; mark $E000-$E7FF I/O area as allocated
                     stb       $1D,x     ; mark $E800-$EFFF I/O area as allocated

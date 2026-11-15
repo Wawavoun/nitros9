@@ -169,75 +169,24 @@ around@
                     sta       INT_MASK_0
                     else
                     ifne      ec6809
-* EC-6809 board -- uses the Arduino as a clock source
-* Timer values:
-*    0 = disable timer interrupts
-*    1 = 10 ms
-*    2 = 20 ms
-*    3 = 30 ms
-*    4 = 40 ms
-*    5 = 50 ms
-*    6 = 100 ms
-*    7 = 250 ms
-*    8 = 500 ms
-*    9 = 1000 ms
-
-                    pshs      d,cc
-
-* Check if subroutine module has already been linked
-                    ifgt      LEVEL-1
-                    ldu       <D.DWSubAddr
-                    else
-                    ldu       >D.DWSubAddr
-                    endc
-* The following code is commented because the pio subroutine module has already
-* been linked and its entry point stored prior to us getting here.
-*         bne   SetTimer
-* Link to subroutine module
-*         clra
-*         leax  iosub,pcr
-*         os9   F$Link
-*         bcs   ClkEx
-*         tfr   y,u
-*         IFGT  LEVEL-1
-*         stu   <D.DWSubAddr
-*         ELSE
-*         stu   >D.DWSubAddr
-*         ENDC
-* Initialize the low level device
-*         jsr   ,u
-
-
-SetTimer
+* EC-6809: the CPU board 6522 at $EF80 makes the tick. T1 runs free,
+* reloading itself from its latch, and interrupts TkPerSec times a second.
+                    pshs      cc
                     orcc      #IntMasks
-                    ldd       #CSETIMR*256+$02
-                    std       1,s
-* Tell Arduino to generate timer interrupts
-                    leax      1,s
-                    ldy       #2
-                    jsr       6,u
-                    ldy       #1
-                    jsr       3,u
-                    lda       ,x
-                    cmpa      #RACK
-                    beq       SETIM1
-                    ldy       #1
-                    jsr       3,u                 read error code
-                    bra       ClkEx
-
-SETIM1
-
-* Enable the CB1 interrupt from the 6522 and clear pending interrupts.
                     ldx       #VIA0Base
-                    lda       VIAIER,x
-                    ora       #%10010000          *enable CB1 interrupts
+                    lda       #%01111111          disable every VIA interrupt
                     sta       VIAIER,x
-                    lda       #$7F
-                    sta       VIAIFR,x            *clear pending ints
-
-ClkEx
-                    puls      cc,d,pc
-*iosub	fcs	/pio/
+                    sta       VIAIFR,x            and clear any that are pending
+                    lda       VIAACR,x
+                    anda      #%00111111          T1 continuous, PB7 not driven
+                    ora       #%01000000
+                    sta       VIAACR,x
+                    ldd       #T1Latch
+                    stb       VIAT1CL,x           low byte goes to the latch
+                    sta       VIAT1CH,x           high byte loads the counter and starts T1
+                    lda       #%11000000          enable the T1 interrupt
+                    sta       VIAIER,x
+                    puls      cc,pc
 
                     else
                     ifne      atari
@@ -310,11 +259,10 @@ ClearInt
                     else
                     ifne      ec6809
                     lda       VIA0Base+VIAIFR
-                    anda      #%00010000          test CB1 interrupt bit in IFR
+                    anda      #%01000000          test the T1 bit in IFR
                     bne       ClearInt            it's a clock interrupt -- clear it
                     jmp       [>D.SvcIRQ]         else service other possible IRQ
-ClearInt            lda       #%00010000          clear clock interrupt
-                    sta       VIA0Base+VIAIFR
+ClearInt            sta       VIA0Base+VIAIFR     A = %01000000 clears the T1 flag
                     else
                     ifne      atari
                     ifne      USENMI

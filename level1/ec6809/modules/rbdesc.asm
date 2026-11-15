@@ -24,32 +24,30 @@ rev                 set       $01
                     ifndef    DNum
 DNum                set       0
                     endc
-                    ifne      D35
-Type                set       TYP.CCF+TYP.3
-                    else
-Type                set       TYP.CCF+TYP.5
-                    endc
+* EC-6809 SPI SD card: DNum 0 = CS0, 1 = CS1. One OS-9 sector per SD
+* block, up to 65536 sectors (16 MB): 256 cylinders of 256 sectors.
+Type                set       TYP.HARD
                     ifndef    Density
-Density             set       DNS.MFM
+Density             set       0
                     endc
                     ifndef    Step
 Step                set       STP.6ms
                     endc
                     ifndef    Cyls
-Cyls                set       35
+Cyls                set       256
                     endc
                     ifndef    Sides
 Sides               set       1
                     endc
 Verify              set       1
                     ifndef    SectTrk
-SectTrk             set       18
+SectTrk             set       256
                     endc
                     ifndef    SectTrk0
-SectTrk0            set       18
+SectTrk0            set       256
                     endc
                     ifndef    Interlv
-Interlv             set       3
+Interlv             set       1
                     endc
                     ifndef    SAS
 SAS                 set       10
@@ -59,7 +57,7 @@ SAS                 set       10
 
                     fcb       DIR.!SHARE.!PEXEC.!PWRIT.!PREAD.!EXEC.!UPDAT. mode byte
                     fcb       HW.Page             extended controller address
-                    fdb       $FF40               physical controller address
+                    fdb       $EE90               physical controller address (SPI)
                     fcb       initsize-*-1        initalization table size
                     fcb       DT.RBF              device type:0=scf,1=rbf,2=pipe,3=scf
                     fcb       DNum                drive number
@@ -82,7 +80,7 @@ name                fcc       /H/
                     fcb       '0+DNum+$80
                     endc
 mgrnam              fcs       /RBF/
-drvnam              fcs       /rbec6809sd/
+drvnam              fcs       /rbec6809spi/
 
                     emod
 eom                 equ       *

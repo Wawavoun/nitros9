@@ -2,10 +2,18 @@
 #
 # It shares no port file with any other recipe.  Products:
 #
-#   bootrom   8 KB ROM image: krn krnp2 init boot_ec6809sd, padded to 3840
-#             bytes, then the REL module; padded at the start to 8192
-#   bootfile  OS9Boot: ioman sysgo clocks SCF RBF pio shell_21
-#   $(DSKIMAGE)  disk image with OS9Boot, CMDS, SYS, DEFS and startup
+#   bootrom   8 KB ROM image: krn krnp2 init boot_ec6809spi, padded to 3840
+#             bytes, then the REL module; padded at the start to 8192.
+#             The upper 4 KB goes at $F000-$FFFF.
+#   bootfile  OS9Boot: ioman sysgo clocks SCF RBF shell_21
+#   $(DSKIMAGE)  disk image with OS9Boot, CMDS, SYS, DEFS and startup,
+#             65536 sectors (16 MB)
+#   $(SDIMAGE)   the same disk laid out for the SD card: sector N in the
+#             first half of block N. Write it to the whole card with dd.
+#
+# Disk I/O and the RTC go through the I/O board EPROM (IO_EPROM_V6):
+# SPI SD cards on CS0 and CS1, DS3231 on I2C. The tick is VIA T1.
+# BOOTCS picks the boot card and /DD: 0 = CS0, 1 = CS1.
 #
 # Sources come from level1/ec6809 first (vpath), then the generic
 # level1/modules and level1/cmds trees.  A file in level1/ec6809/modules
@@ -38,20 +46,24 @@ WHICHSHELL = shell_21
 DISTRONAME = NOS9_$(CPU)_L$(LEVEL)
 DISTROVER  = $(DISTRONAME)_$(NITROS9VER)_$(PORT)
 DSKIMAGE  ?= $(DISTROVER).dsk
+SDIMAGE   ?= $(DISTROVER).sd
+DSKSECT   ?= 65536
+BOOTCS    ?= 0
+AFLAGS    += -DBOOTCS=$(BOOTCS)
 
 # Modules
-BOOTERS  = rel boot_ec6809sd
+BOOTERS  = rel boot_ec6809spi
 KERNEL   = krn krnp2
-SYSMODS  = ioman init sysgo sysgo_rom pio.sb
-CLOCKS   = clock clock2_ec6809sd
-RBF      = rbf.mn rbec6809sd.dr ddh0.dd h0.dd h1.dd h2.dd h3.dd
+SYSMODS  = ioman init sysgo sysgo_rom
+CLOCKS   = clock clock2_ec6809rtc
+RBF      = rbf.mn rbec6809spi.dr ddh0.dd h0.dd h1.dd
 SCF      = scf.mn vrn.dr nil.dd sc6850.dr term_sc6850.dt
 PIPE     = pipeman.mn piper.dr pipe.dd
 MODULES  = $(BOOTERS) $(KERNEL) $(SYSMODS) $(CLOCKS) $(RBF) $(SCF) $(PIPE)
 
-BOOTROM  = krn krnp2 init boot_ec6809sd
-BOOTFILE = ioman sysgo clock clock2_ec6809sd scf.mn sc6850.dr term_sc6850.dt \
-           rbf.mn rbec6809sd.dr ddh0.dd h1.dd h2.dd h3.dd pio.sb $(WHICHSHELL)
+BOOTROM  = krn krnp2 init boot_ec6809spi
+BOOTFILE = ioman sysgo clock clock2_ec6809rtc scf.mn sc6850.dr term_sc6850.dt \
+           rbf.mn rbec6809spi.dr ddh0.dd h0.dd h1.dd $(WHICHSHELL)
 
 # Commands
 CMDS = asm attr backup bawk binex build calldbg cmp copy cputype \
@@ -95,7 +107,7 @@ DEFS    = defsfile os9.d rbf.d scf.d ec6809.d
 
 STARTUP = $(L1PD)/startup
 
-all: banner libs bootrom $(DSKIMAGE)
+all: banner libs bootrom $(DSKIMAGE) $(SDIMAGE)
 
 banner:
 	@$(ECHO) "************************************************************"
@@ -154,7 +166,7 @@ $(DEFDIR)/ec6809.d: $(L1PD)/defs/ec6809.d | $(DEFDIR)
 $(DSKIMAGE): bootfile helpmsg inetd.conf $(addprefix $(DEFDIR)/,$(DEFS)) \
 		$(addprefix $(MODDIR)/,$(CMDS)) $(SYSTEXT) $(STARTUP)
 	$(RM) $@
-	$(OS9FORMAT_DW) -e -q $@ -n"NitrOS-9/$(CPU) Level $(LEVEL)"
+	$(OS9FORMAT) -q -l$(DSKSECT) $@ -n"NitrOS-9/$(CPU) Level $(LEVEL)"
 	$(OS9GEN) $@ -b=bootfile
 	$(MAKDIR) $@,CMDS
 	$(MAKDIR) $@,SYS
@@ -169,24 +181,21 @@ $(DSKIMAGE): bootfile helpmsg inetd.conf $(addprefix $(DEFDIR)/,$(DEFS)) \
 	$(CPL) $(STARTUP) $@,startup
 	$(OS9ATTR_TEXT) $@,startup
 
+$(SDIMAGE): $(DSKIMAGE) sdimage.py
+	python3 sdimage.py $< $@
+
 # Module rules
 $(MODDIR)/sysgo_rom: sysgo.asm | $(MODDIR)
 	$(AS) $(AFLAGS) $< $(ASOUT)$@ -DROM=1
 
 $(MODDIR)/ddh0.dd: rbdesc.asm | $(MODDIR)
-	$(AS) $< $(ASOUT)$@ $(AFLAGS) -DDD=1 -DDNum=0
+	$(AS) $< $(ASOUT)$@ $(AFLAGS) -DDD=1 -DDNum=$(BOOTCS)
 
 $(MODDIR)/h0.dd: rbdesc.asm | $(MODDIR)
 	$(AS) $< $(ASOUT)$@ $(AFLAGS) -DDNum=0
 
 $(MODDIR)/h1.dd: rbdesc.asm | $(MODDIR)
 	$(AS) $< $(ASOUT)$@ $(AFLAGS) -DDNum=1
-
-$(MODDIR)/h2.dd: rbdesc.asm | $(MODDIR)
-	$(AS) $< $(ASOUT)$@ $(AFLAGS) -DDNum=2
-
-$(MODDIR)/h3.dd: rbdesc.asm | $(MODDIR)
-	$(AS) $< $(ASOUT)$@ $(AFLAGS) -DDNum=3
 
 $(MODDIR)/term_sc6850.dt: term_sc6850.asm | $(MODDIR)
 	$(AS) $< $(ASOUT)$@ $(AFLAGS) -DHwBASE=0xEEA0
@@ -218,9 +227,10 @@ info:
 	@$(ECHO) "Bootrom:   bootrom"
 	@$(ECHO) "Bootfile:  bootfile"
 	@$(ECHO) "Disk:      $(DSKIMAGE)"
+	@$(ECHO) "SD card:   $(SDIMAGE) (boot card CS$(BOOTCS))"
 
 clean:
-	$(RM) bootrom bootrom_p1 bootfile buildinfo helpmsg inetd.conf *.dsk *.list *.map
+	$(RM) bootrom bootrom_p1 bootfile buildinfo helpmsg inetd.conf *.dsk *.sd *.list *.map
 	-rm -rf $(OBJDIR) $(LIBDIR) $(MODDIR) $(DEFDIR)
 
 .PHONY: all banner modules cmds info clean libs

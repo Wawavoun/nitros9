@@ -1,0 +1,191 @@
+********************************************************************
+* Clock2 - EC-6809 DS3231 RTC driver
+*
+* The DS3231 is on the I/O board I2C bus (PCF8584). It is reached
+* through the public entries of IO_EPROM_V6, page 1:
+*   P_I2C_INIT, P_I2C_START, P_I2C_WRITE, P_I2C_STOP
+*   P_RTC_GET_BYTE (register A -> value B), P_BCDHEX
+* The RTC must run in 24-hour mode. Years are 2000-2099.
+* If the RTC does not answer, the time is left as it is.
+*
+* Edt/Rev  YYYY/MM/DD  Modified by
+* Comment
+* ------------------------------------------------------------------
+*   1      2026/11/15  Philippe Roehr
+* Created from clock2_ec6809sd, without the Arduino.
+
+                    nam       Clock2
+                    ttl       EC-6809 DS3231 RTC driver
+
+                    ifp1
+                    use       defsfile
+                    endc
+
+tylg                set       Sbrtn+Objct
+atrv                set       ReEnt+rev
+rev                 set       $00
+edition             set       1
+
+RTC.Base            equ       $0000
+
+                    mod       eom,name,tylg,atrv,JmpTable,RTC.Base
+
+name                fcs       "Clock2"
+                    fcb       edition
+
+* Three Entry Points:
+*   - Init
+*   - GetTime
+*   - SetTime
+JmpTable
+                    lbra      Init
+                    bra       GetTime             RTC Get Time
+                    nop
+
+* SetTime. D.Year-D.Sec go to DS3231 registers 0-6, in BCD.
+* Called by F$STime, in system state. IRQs stay masked so the minute
+* GetTime cannot start an I2C transfer in the middle of this one.
+SetTime             pshs      u,y,x,d,cc
+                    orcc      #IntMasks
+                    bsr       Page1
+                    jsr       P_I2C_START
+                    bne       SetStop
+                    ldb       #RTC.Addr
+                    jsr       P_I2C_WRITE
+                    bne       SetStop
+                    clrb                          start at register 0, seconds
+                    jsr       P_I2C_WRITE
+                    bne       SetStop
+                    leau      WrTab,pcr
+SetLoop             ldb       ,u+                 offset in D.Time, or $FF for day of week
+                    bmi       SetDow
+                    ldx       #D.Time
+                    lda       b,x
+                    cmpb      #0                  D.Year is years since 1900
+                    bne       SetBCD
+                    suba      #100
+SetBCD              bsr       ToBCD
+                    tfr       a,b
+                    bra       SetPut
+SetDow              ldb       #1                  day of week, not kept by OS-9
+SetPut              jsr       P_I2C_WRITE
+                    bne       SetStop
+                    tst       ,u                  $80 ends the table
+                    bpl       SetLoop
+SetStop             jsr       P_I2C_STOP
+                    puls      cc,d,x,y,u,pc
+
+* DS3231 register order 0-6: offsets of sec, min, hour in D.Time, $FF for
+* the day of week, then day, month, year.
+WrTab               fcb       D.Sec-D.Time,D.Min-D.Time,D.Hour-D.Time,$FF
+                    fcb       D.Day-D.Time,D.Month-D.Time,D.Year-D.Time,$80
+
+* ToBCD. A = 0-99 binary. A returns the BCD value. B destroyed.
+ToBCD               clrb
+TB1                 cmpa      #10
+                    blo       TB2
+                    suba      #10
+                    addb      #$10
+                    bra       TB1
+TB2                 pshs      b
+                    adda      ,s+
+                    rts
+
+* Page1 - map the EPROM public entries.
+Page1               lda       #1
+                    sta       >IOPAGE
+                    rts
+
+* GetTime. Called from the clock tick, once a minute, at IRQ level.
+* It runs only when no EPROM call is active (IODEP = IODEP0). Then the
+* interrupted code is outside the EPROM or in a page 1 slot, and the page
+* found in PAGEID is put back. All six fields are read before any is
+* stored. When the RTC cannot be read, the minute is counted in software:
+* this Level 1 clock advances minutes only through GetTime.
+GetTime             pshs      u,y,x,d
+                    ldd       >IODEP
+                    cmpd      #IODEP0
+                    bne       GetSoft             an EPROM call is active
+                    lda       >PAGEID             page now mapped
+                    pshs      a
+                    bsr       Page1
+                    leas      -6,s
+                    leay      RdTab,pcr
+                    leau      ,s
+GetLoop             lda       ,y+                 DS3231 register
+                    jsr       P_RTC_GET_BYTE      B = value, Z = 1 when it answered
+                    bne       GetFail
+                    andb      ,y+                 drop the control bits
+                    tfr       b,a
+                    jsr       P_BCDHEX            A = binary
+                    sta       ,u+
+                    tst       ,y                  $FF ends the table
+                    bpl       GetLoop
+                    lda       ,s
+                    adda      #100                D.Year is years since 1900
+                    sta       ,s
+                    ldx       #D.Time
+                    ldb       #6
+GetCopy             lda       ,s+
+                    sta       ,x+
+                    decb
+                    bne       GetCopy
+                    puls      a
+                    sta       >IOPAGE             back to the page found
+                    puls      d,x,y,u,pc
+GetFail             leas      6,s
+                    puls      a
+                    sta       >IOPAGE             back to the page found
+GetSoft             bsr       SoftMin
+                    puls      d,x,y,u,pc
+
+* Register and mask, in D.Time order: year, month, day, hour, min, sec.
+RdTab               fcb       6,$FF,5,$1F,4,$3F,2,$3F,1,$7F,0,$7F,$FF
+
+* SoftMin. Advance D.Time by one minute, seconds = 0.
+* Same code as clock2_soft. DP is 0 at IRQ level.
+SoftMin             lda       <D.Min              grab current minute
+                    inca                          minute+1
+                    cmpa      #60                 End of hour?
+                    blo       UpdMin              no, Set start of minute
+                    ldd       <D.Day              get day, hour
+                    incb                          hour+1
+                    cmpb      #24                 End of Day?
+                    blo       UpdHour             ..no
+                    inca                          day+1
+                    leax      <months-1,pcr       point to months table with offset-1: Jan = +1
+                    ldb       <D.Month            this month
+                    cmpa      b,x                 end of month?
+                    bls       UpdDay              ..no, update the day
+                    cmpb      #2                  yes, is it Feb?
+                    bne       NoLeap              ..no, ok
+                    ldb       <D.Year             else get year
+                    andb      #$03                check for leap year: good until 2099
+                    cmpd      #$1D00              29th on leap year?
+                    beq       UpdDay              ..yes, skip it
+NoLeap              ldd       <D.Year             else month+1
+                    incb                          month+1
+                    cmpb      #13                 end of year?
+                    blo       UpdMonth            ..no
+                    inca                          year+1
+                    ldb       #$01                set month to jan
+UpdMonth            std       <D.Year             save year, month
+                    lda       #$01                day=1st
+UpdDay              clrb                          hour=midnite
+UpdHour             std       <D.Day              save day,hour
+                    clra                          minute=00
+UpdMin              clrb                          seconds=00
+                    std       <D.Min              save min,secs
+                    rts
+months              fcb       31,28,31,30,31,30,31,31,30,31,30,31 Days in each month
+
+* Init. Set up the PCF8584 once.
+Init                pshs      a
+                    lda       #1
+                    sta       >IOPAGE             EPROM page 1
+                    jsr       P_I2C_INIT
+                    puls      a,pc
+
+                    emod
+eom                 equ       *
+                    end
