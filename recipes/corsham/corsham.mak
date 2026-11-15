@@ -109,20 +109,13 @@ modules: $(addprefix $(MODDIR)/,$(MODULES))
 
 cmds: $(addprefix $(MODDIR)/,$(CMDS))
 
-# $F000-$FEFF holds the kernel, Init and SD booter (3840 bytes at most).
-# REL and its hardware vectors must remain at $FF00-$FFFF. The lower half
-# of the 8K EPROM is padding.
-bootrom: $(addprefix $(MODDIR)/,$(BOOTROM) rel) corsham.mak
+bootrom: $(addprefix $(MODDIR)/,$(BOOTROM) rel)
 	$(MERGE) $(addprefix $(MODDIR)/,$(BOOTROM)) > bootrom_p1
 	$(PADROM) 3840 bootrom_p1
-	$(MERGE) bootrom_p1 $(MODDIR)/rel > $@.tmp
-	$(PADROM) 8192 -b $@.tmp
-	$(MOVE) $@.tmp $@
+	$(MERGE) bootrom_p1 $(MODDIR)/rel > $@
+	$(PADROM) 8192 -b $@
 	$(RM) bootrom_p1
 	@ls -l $@
-
-check: bootrom
-	python3 $(NITROS9DIR)/scripts/check-corsham-rom.py bootrom
 
 bootfile: $(addprefix $(MODDIR)/,$(BOOTFILE))
 	$(MERGE) $(addprefix $(MODDIR)/,$(BOOTFILE)) > $@
@@ -226,7 +219,7 @@ info:
 	@$(ECHO) "Disk:      $(DSKIMAGE)"
 
 clean:
-	$(RM) bootrom bootrom.tmp bootrom_p1 bootfile buildinfo helpmsg inetd.conf *.dsk *.list *.map
+	$(RM) bootrom bootrom_p1 bootfile buildinfo helpmsg inetd.conf *.dsk *.list *.map
 	-rm -rf $(OBJDIR) $(LIBDIR) $(MODDIR) $(DEFDIR)
 
-.PHONY: all banner modules cmds info check clean libs
+.PHONY: all banner modules cmds info clean libs

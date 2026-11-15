@@ -99,11 +99,11 @@ DefCons             fcs       "/Term"
 DefBoot             fcs       "Boot"
 
 *
-* DragonAlpha boot tracks and the Corsham ROM have no space for descriptive
-* strings. Corsham has a fixed 3840-byte payload limit before REL.
+* The DragonAlpha is so pushed for boot track space, that we have to exclude these
+* messages !
 *
 
-                    ifeq      dalpha+corsham
+                    ifeq      dalpha
 OSStr               equ       *
                     fcc       "NitrOS-9/"
                     ifne      H6309
@@ -203,19 +203,14 @@ InstStr             equ       *
                     endc                          match IFNE coco1
                     fcb       0                   null-terminate the name string
                     else
-* DragonAlpha and Corsham: retain valid offsets to an empty string.
+* DragonAlpha
 OSStr               equ       *
 InstStr             equ       *
                     fcb       0                   null-length string
-                    endc                          match IFEQ dalpha+corsham
-                    ifne      corsham
-* Share the empty string; build metadata must not consume ROM space.
-BuildStr            equ       OSStr
-                    else
+                    endc                          match IFEQ dalpha
 BuildStr
                     use       buildinfo
                     fcb       0                   null-length string
-                    endc
                     
                     emod
 eom                 equ       *

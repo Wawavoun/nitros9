@@ -1,5 +1,3 @@
 .defs/
-/bootrom
-/bootrom.tmp
-/bootrom_p1
+bootrom
 inetd.conf
