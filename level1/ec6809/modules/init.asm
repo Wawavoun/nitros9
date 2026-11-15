@@ -102,11 +102,11 @@ DefCons             fcs       "/Term"
 DefBoot             fcs       "Boot"
 
 *
-* The DragonAlpha is so pushed for boot track space, that we have to exclude these
-* messages !
+* DragonAlpha boot tracks and the EC-6809 ROM have no space for descriptive
+* strings. The EC-6809 ROM has a fixed 3840-byte payload limit before REL.
 *
 
-                    ifeq      dalpha
+                    ifeq      dalpha+ec6809
 OSStr               equ       *
                     fcc       "NitrOS-9/"
                     ifne      H6309
@@ -191,11 +191,11 @@ InstStr             equ       *
                     endc                          match IFNE coco1
                     fcb       0                   null-terminate the name string
                     else
-* DragonAlpha
+* DragonAlpha and EC-6809: retain valid offsets to an empty string.
 OSStr               equ       *
 InstStr             equ       *
                     fcb       0                   null-length string
-                    endc                          match IFEQ dalpha
+                    endc                          match IFEQ dalpha+ec6809
 
                     emod
 eom                 equ       *
