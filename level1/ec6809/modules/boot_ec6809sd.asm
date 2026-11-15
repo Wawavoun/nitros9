@@ -61,22 +61,16 @@ name           fcs       /Boot/
 *       Carry Clear = OK, Set = Error
 *       B  = error (Carry Set)
 *
-* The "Boot Init" debugging message costs 22 bytes of the 3840-byte ROM
-* payload. Assemble with -DBOOTDEBUG=1 to print it.
-                    ifne      BOOTDEBUG
 bootmsg  fcb $d,$a
          fcc "Boot Init"
          fcb $D,$A,0
-                    endc
 
 HWInit
-                    ifne      BOOTDEBUG
 *
 * Debugging message
 *
  leax bootmsg,pcr
  jsr [S.StringOut] 
-                    endc
 ;
 ; Set up the data direction register for port B so that
 ; the DIRECTION and PSTROBE bits are output.
