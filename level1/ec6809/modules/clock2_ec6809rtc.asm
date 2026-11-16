@@ -13,6 +13,8 @@
 * ------------------------------------------------------------------
 *   1      2026/11/15  Philippe Roehr
 * Created from clock2_ec6809sd, without the Arduino.
+*   2      2026/11/16  Philippe Roehr
+* Init reads the RTC, so the time is right from boot.
 
                     nam       Clock2
                     ttl       EC-6809 DS3231 RTC driver
@@ -24,7 +26,7 @@
 tylg                set       Sbrtn+Objct
 atrv                set       ReEnt+rev
 rev                 set       $00
-edition             set       1
+edition             set       2
 
 RTC.Base            equ       $0000
 
@@ -99,9 +101,9 @@ Page1               lda       #1
 * GetTime. Called from the clock tick, once a minute, at IRQ level.
 * It runs only when no EPROM call is active (IODEP = IODEP0). Then the
 * interrupted code is outside the EPROM or in a page 1 slot, and the page
-* found in PAGEID is put back. All six fields are read before any is
-* stored. When the RTC cannot be read, the minute is counted in software:
-* this Level 1 clock advances minutes only through GetTime.
+* found in PAGEID is put back. When the RTC cannot be read, the minute is
+* counted in software: this Level 1 clock advances minutes only through
+* GetTime.
 GetTime             pshs      u,y,x,d
                     ldd       >IODEP
                     cmpd      #IODEP0
@@ -109,38 +111,66 @@ GetTime             pshs      u,y,x,d
                     lda       >PAGEID             page now mapped
                     pshs      a
                     bsr       Page1
-                    leas      -6,s
+                    bsr       ReadRTC
+                    puls      a                   Z is kept
+                    sta       >IOPAGE             back to the page found
+                    beq       GetEx               RTC read
+GetSoft             bsr       SoftMin
+GetEx               puls      d,x,y,u,pc
+
+* ReadRTC. EPROM page 1 must be mapped. All six fields are read before
+* any is stored, so D.Time changes only when the RTC answered. The copy
+* runs with IRQs masked, so no tick sees half a time.
+* Exit: Z = 1 when D.Time was set from the RTC. A, B, X, Y, U destroyed.
+ReadRTC             leas      -6,s
                     leay      RdTab,pcr
                     leau      ,s
-GetLoop             lda       ,y+                 DS3231 register
+RdLoop              lda       ,y+                 DS3231 register
                     jsr       P_RTC_GET_BYTE      B = value, Z = 1 when it answered
-                    bne       GetFail
+                    bne       RdFail
                     andb      ,y+                 drop the control bits
                     tfr       b,a
                     jsr       P_BCDHEX            A = binary
                     sta       ,u+
                     tst       ,y                  $FF ends the table
-                    bpl       GetLoop
+                    bpl       RdLoop
                     lda       ,s
                     adda      #100                D.Year is years since 1900
                     sta       ,s
+                    leau      ,s                  the six fields
                     ldx       #D.Time
                     ldb       #6
-GetCopy             lda       ,s+
+                    pshs      cc
+                    orcc      #IntMasks
+RdCopy              lda       ,u+
                     sta       ,x+
                     decb
-                    bne       GetCopy
-                    puls      a
-                    sta       >IOPAGE             back to the page found
-                    puls      d,x,y,u,pc
-GetFail             leas      6,s
-                    puls      a
-                    sta       >IOPAGE             back to the page found
-GetSoft             bsr       SoftMin
-                    puls      d,x,y,u,pc
+                    bne       RdCopy
+                    puls      cc
+                    leas      6,s
+                    orcc      #Zero               RTC read
+                    rts
+RdFail              leas      6,s                 LEAS keeps Z = 0
+                    rts
 
 * Register and mask, in D.Time order: year, month, day, hour, min, sec.
 RdTab               fcb       6,$FF,5,$1F,4,$3F,2,$3F,1,$7F,0,$7F,$FF
+
+* Init. Called by the clock init inside the first F$STime, made by SysGo
+* before the shell starts, after the default time was stored. No other
+* EPROM call can be active then. Set up the PCF8584 and read the RTC so
+* the time is right at once. The clock init has already set D.Sec = 59
+* and D.Tick = 1 to force a GetTime on the next tick. When the RTC is
+* read, D.Tick is set to a full second instead; when it is not, the
+* default time and the forced GetTime are kept.
+Init                pshs      u,y,x,d,cc
+                    bsr       Page1               EPROM page 1
+                    jsr       P_I2C_INIT
+                    bsr       ReadRTC
+                    bne       InitEx              no RTC, keep the default time
+                    lda       >D.TSec             a full second before the next count
+                    sta       >D.Tick
+InitEx              puls      cc,d,x,y,u,pc
 
 * SoftMin. Advance D.Time by one minute, seconds = 0.
 * Same code as clock2_soft. DP is 0 at IRQ level.
@@ -178,13 +208,6 @@ UpdMin              clrb                          seconds=00
                     std       <D.Min              save min,secs
                     rts
 months              fcb       31,28,31,30,31,30,31,31,30,31,30,31 Days in each month
-
-* Init. Set up the PCF8584 once.
-Init                pshs      a
-                    lda       #1
-                    sta       >IOPAGE             EPROM page 1
-                    jsr       P_I2C_INIT
-                    puls      a,pc
 
                     emod
 eom                 equ       *
