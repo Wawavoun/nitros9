@@ -2,23 +2,25 @@
 * Boot - EC-6809 SPI SD card boot module
 *
 * Loads OS9Boot from an SD card on the I/O board SPI interface.
-* The card is read through the public entries of IO_EPROM_V6, page 1:
-*   P_SDINIA  probe CS0 and CS1, SDSC or SDHC
-*   P_RDSDLB  read one 256-byte sector, A = LSN bits 15-8, B = bits 7-0
-* One OS-9 sector is the first half of SD block LSN, so a card holds a
-* disk of up to 65536 sectors (16 MB) from block 0.
+* The card is read through the NitrOS-9 part of the I/O board EPROM
+* (recipes/ec6809/io_eprom_nos9.asm), public entries on page $10:
+*   P_NINIT   set up the EPROM variables, probe CS0 and CS1
+*   P_SDSTAT  flag of one card
+*   P_RDSEC   read one 256-byte sector, A = card, B:X = LSN, U = buffer
+* One OS-9 sector is the first half of SD block LSN.
 *
 * BOOTCS selects the card: 0 = CS0 (default), 1 = CS1.
 *
-* The ESS540 monitor normally sets up the I/O board. It is not in this
-* ROM, so HWInit selects EPROM page 1 and I/O RAM page 0, and stores the
-* empty FARCALL frame pointer before the first EPROM call.
+* HWInit selects EPROM page $10 and I/O RAM page 0, and stores the empty
+* FARCALL frame pointer before the first EPROM call.
 *
 * Edt/Rev  YYYY/MM/DD  Modified by
 * Comment
 * ------------------------------------------------------------------
 *   1      2026/11/15  Philippe Roehr
 * Created from boot_ec6809sd, without the Arduino.
+*   2      2026/11/17  Philippe Roehr
+* Uses the NitrOS-9 EPROM part on page $10. No EPROM variable in main RAM.
 
                     nam       Boot
                     ttl       EC-6809 SPI SD boot module
@@ -43,7 +45,7 @@ size                equ       .
 tylg                set       Systm+Objct
 atrv                set       ReEnt+rev
 rev                 set       $00
-edition             set       1
+edition             set       2
 
                     mod       eom,name,tylg,atrv,start,size
 
@@ -60,20 +62,15 @@ name                fcs       /Boot/
 *       Carry Clear = OK, Set = Error
 *       B  = error (Carry Set)
 *
-HWInit              clr       >PRCNT              RDSDLB must not call the FLEX spooler
-                    lda       #1
-                    sta       >IOPAGE             EPROM page 1, the public entries
-                    clr       >IORAMPG            I/O RAM page 0 holds the FARCALL frames
+HWInit              lda       #NOSPAGE
+                    sta       >IOPAGE             EPROM page $10, the public entries
+                    clr       >IORAMPG            I/O RAM page 0: frames and variables
                     ldd       #IODEP0
                     std       >IODEP              no FARCALL frame yet
-                    lda       #2                  both cards not tested
-                    sta       >SDOK0
-                    sta       >SDOK1
-                    jsr       P_SDINIA            CMD0 / CMD8 / ACMD41 / CMD58 on CS0 and CS1
+                    jsr       P_NINIT             CMD0 / CMD8 / ACMD41 / CMD58 on CS0 and CS1
                     lda       #BOOTCS
-                    sta       >SDCS               boot card
-                    ldx       #SDOK0
-                    tst       a,x                 $00 is the only usable value
+                    jsr       P_SDSTAT            B = flag of the boot card
+                    tstb                          $00 is the only usable value
                     beq       HWTerm
                     comb
                     ldb       #E$NotRdy
@@ -103,13 +100,13 @@ HWTerm              clrb                          no error
 *       X = ptr to data (i.e. ptr in blockloc,u)
 *       Carry Clear = OK, Set = Error
 *
-HWRead              tfr       x,d                 A = LSN bits 15-8, B = bits 7-0
-                    ldx       blockloc,u
-                    jsr       P_RDSDLB            A, X, Y and U are kept
-                    bcs       HWRdEr
-                    rts                           B = 0, C = 0 from RDSDLB
-HWRdEr              ldb       #E$Read
-                    rts
+HWRead              pshs      u
+                    ldu       blockloc,u          the buffer
+                    lda       #BOOTCS
+                    clrb                          LSN bits 23-16
+                    jsr       P_RDSEC             A, X, Y and U are kept, B = error
+                    tfr       u,x                 X = ptr to data, C is kept
+                    puls      u,pc
 
 Address             fdb       $0000
 

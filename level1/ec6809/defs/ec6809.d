@@ -83,11 +83,16 @@ VIAIFR              equ       $0D                 interrupt flag register
 VIAIER              equ       $0E                 interrupt enable register
 
 ********************************************************************
-* I/O board EPROM (IO_EPROM_V6), SPI SD cards and DS3231 RTC.
+* I/O board EPROM, NitrOS-9 part (recipes/ec6809/io_eprom_nos9.asm),
+* SPI SD cards and DS3231 RTC.
 *
-* The EPROM is a paged window at $E800-$E9FF. Page 1 holds the public
-* entries. Select page 1 from code outside the window, then JSR a slot.
-* The slot returns with page 1 still mapped. U is not used by FARCALL.
+* The EPROM is a paged window at $E800-$E9FF. Pages $10-$3F of the
+* AT28C256 are the NitrOS-9 part; pages $00-$0F are FLEX and are never
+* called. Page $10 (NOSPAGE) holds the public entries. Select it from code
+* outside the window, then JSR a slot; the slot returns with page $10
+* still mapped. U is not used by FARCALL. Errors are NitrOS-9 codes in B
+* with C = 1. Every EPROM variable is in I/O RAM page 0, so the EPROM uses
+* no main RAM.
 * Only one EPROM call may run at a time. Interrupt code may call it only
 * while IODEP = IODEP0 (no frame active), and must put back the page it
 * found in PAGEID. Clock2 GetTime, called every minute from the tick, does.
@@ -97,26 +102,27 @@ IOPAGE              equ       $EEB0               I/O EPROM page latch
 IORAMPG             equ       $EEC0               I/O RAM page latch
 IODEP               equ       $EA00               FARCALL frame pointer, in I/O RAM
 IODEP0              equ       $EC00               its value with no call active
+NOSPAGE             equ       $10                 EPROM page of the NitrOS-9 entries
 
-P_SDINIA            equ       $E898               probe CS0 then CS1
-P_RDSDLB            equ       $E8A8               read one 256-byte sector
-P_WRSDLB            equ       $E8B0               write one 256-byte sector
-P_I2C_INIT          equ       $E8C0               PCF8584 init
-P_I2C_START         equ       $E8C8               I2C start (sent by the next write)
-P_I2C_STOP          equ       $E8D8               I2C stop
-P_I2C_WRITE         equ       $E8E0               send B, Z = 1 on ACK
-P_RTC_GET_BYTE      equ       $E978               DS3231 register A -> B, Z = 1 OK
-P_BCDHEX            equ       $E980               BCD A -> binary A
-
-* EPROM working RAM in main memory. Krn keeps pages $CC and $DE allocated.
-PRCNT               equ       $CC34               FLEX spooler flag, must stay 0
-SDCS                equ       $DE6B               card used by RDSDLB/WRSDLB, 0 or 1
-SDOK0               equ       $DE6D               CS0: $00 usable, $01 empty, $02 not tested
-SDOK1               equ       $DE6E               CS1: same values
-
-* EPROM errors returned in B with C = 1
-ERSRW               equ       $40                 read or write failed
-ERSNR               equ       $80                 no usable card
+* A = card (0 = CS0, 1 = CS1) where noted. Sector entries: B = LSN bits
+* 23-16, X = LSN bits 15-0, U = 256-byte buffer; A, X, Y and U are kept.
+* Card flags: $00 usable, $01 no card, $02 not tested.
+P_NINIT             equ       $E850               set up, probe both cards
+P_SDINIA            equ       $E858               probe the cards not yet tested
+P_SDINIT            equ       $E860               A = card, forced init
+P_SDSTAT            equ       $E868               A = card, B = its flag
+P_RDSEC             equ       $E870               read one 256-byte sector
+P_WRSEC             equ       $E878               write one 256-byte sector
+P_I2C_INIT          equ       $E880               PCF8584 init
+P_I2C_START         equ       $E888               I2C start (sent by the next write)
+P_I2C_RESTART       equ       $E890               I2C repeated start
+P_I2C_STOP          equ       $E898               I2C stop
+P_I2C_WRITE         equ       $E8A0               send B, Z = 1 on ACK
+P_I2C_READ_ACK      equ       $E8A8               receive B with ACK
+P_I2C_READ_NACK     equ       $E8B0               receive B, last byte
+P_RTC_OK            equ       $E8B8               Z = 1 if the DS3231 answers
+P_RTC_GET_BYTE      equ       $E8C0               DS3231 register A -> B, Z = 1 OK
+P_BCDHEX            equ       $E8C8               BCD A -> binary A
 
 RTC.Addr            equ       $D0                 DS3231 I2C address, write
 

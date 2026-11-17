@@ -1,11 +1,13 @@
 ********************************************************************
 * rbec6809spi - EC-6809 SPI SD card RBF driver
 *
-* Drives the two SD sockets of the I/O board through IO_EPROM_V6:
+* Drives the two SD sockets of the I/O board through the NitrOS-9 part of
+* the I/O board EPROM (recipes/ec6809/io_eprom_nos9.asm), page $10:
 *   drive 0 = CS0, drive 1 = CS1 (descriptor IT.DRV).
-* Each OS-9 sector is the first half of SD block LSN (P_RDSDLB and
-* P_WRSDLB), so a card holds a disk of up to 65536 sectors (16 MB).
-* The second half of each block is written as zeros.
+* Each OS-9 sector is the first half of SD block LSN (P_RDSEC and
+* P_WRSEC, 24-bit LSN). The second half of each block is written as zeros.
+* The EPROM checks the card number and the card flag, and returns
+* E$Unit, E$NotRdy, E$Read or E$Write itself.
 *
 * The booter has already set up the I/O board and probed both cards.
 * Init probes again any card whose flag is not $00 or $01; that sends no
@@ -21,6 +23,8 @@
 * ------------------------------------------------------------------
 *   1      2026/11/15  Philippe Roehr
 * Created from rbec6809sd, without the Arduino.
+*   2      2026/11/17  Philippe Roehr
+* Uses the NitrOS-9 EPROM part on page $10, with a 24-bit LSN.
 
                     nam       rbec6809spi
                     ttl       EC-6809 SPI SD card RBF driver
@@ -34,7 +38,7 @@ NumDrvs             set       2
 tylg                set       Drivr+Objct
 atrv                set       ReEnt+rev
 rev                 set       $00
-edition             set       1
+edition             set       2
 
                     mod       eom,name,tylg,atrv,start,size
 
@@ -73,53 +77,15 @@ Init2               sta       DD.TOT,x            invalidate drive tables
                     leax      DRVMEM,x
                     decb
                     bne       Init2
-                    bsr       Page1
+                    bsr       PageN
                     jsr       P_SDINIA            probe only cards not yet tested
 * No usable card is not an Init error: Read and Write return E$NotRdy.
 Term                clrb
                     rts
 
-* Page1 - map the EPROM public entries. RDSDLB tests PRCNT for the FLEX
-* spooler; krn keeps its page allocated and it must stay 0.
-Page1               lda       #1
+* PageN - map the EPROM public entries. A destroyed.
+PageN               lda       #NOSPAGE
                     sta       >IOPAGE
-                    clr       >PRCNT
-                    rts
-
-* Prep - check the drive and the LSN, select the card.
-*
-* Entry:
-*    B  = MSB of LSN
-*    X  = LSB of LSN
-*    Y  = address of path descriptor
-*
-* Exit:
-*    D  = LSN bits 15-0 (A = high byte, B = low byte)
-*    CC = carry set on error, B = error code
-*
-Prep                tstb                          bits 23-16 must be 0
-                    bne       PrepSct
-                    ldb       PD.DRV,y
-                    cmpb      #NumDrvs
-                    bhs       PrepUnit
-                    stb       >SDCS
-                    pshs      x
-                    ldx       #SDOK0
-                    tst       b,x                 $00 is the only usable value
-                    puls      x
-                    bne       PrepNR
-                    bsr       Page1
-                    tfr       x,d
-                    andcc     #^Carry
-                    rts
-PrepSct             comb
-                    ldb       #E$Sect
-                    rts
-PrepUnit            comb
-                    ldb       #E$Unit
-                    rts
-PrepNR              comb
-                    ldb       #E$NotRdy
                     rts
 
 * Read
@@ -134,18 +100,19 @@ PrepNR              comb
 *    CC = carry set on error
 *    B  = error code
 *
-Read                bsr       Prep
-                    bcs       ReadEx
-                    ldx       PD.BUF,y
-                    pshs      d
-                    jsr       P_RDSDLB            A, X, Y and U are kept
-                    puls      d                   carry is kept
-                    bcs       ReadEr
-                    cmpd      #0                  LSN 0?
+Read                bsr       PageN
+                    lda       PD.DRV,y            card
+                    pshs      u,b                 B = LSN bits 23-16, at 0,s
+                    ldu       PD.BUF,y
+                    jsr       P_RDSEC             A, X, Y and U are kept
+                    puls      b,u                 C is kept
+                    bcs       ReadEx              B = error from the EPROM
+                    tstb                          LSN 0?
+                    bne       ReadOk
+                    leax      ,x
                     bne       ReadOk
 * LSN 0: copy the disk description into this drive's table.
-                    lda       PD.DRV,y
-                    ldb       #DRVMEM
+                    ldb       #DRVMEM             A = PD.DRV, kept by P_RDSEC
                     mul
                     leax      d,u
                     leax      DRVBEG,x
@@ -157,8 +124,6 @@ CpyLSN0             lda       ,y+
                     bne       CpyLSN0
 ReadOk              clrb
 ReadEx              rts
-ReadEr              ldb       #E$Read
-                    rts
 
 * Write
 *
@@ -172,13 +137,12 @@ ReadEr              ldb       #E$Read
 *    CC = carry set on error
 *    B  = error code
 *
-Write               bsr       Prep
-                    bcs       ReadEx
-                    ldx       PD.BUF,y
-                    jsr       P_WRSDLB            A, X, Y and U are kept
-                    bcc       ReadOk
-                    ldb       #E$Write
-                    rts
+Write               bsr       PageN
+                    lda       PD.DRV,y            card
+                    pshs      u
+                    ldu       PD.BUF,y
+                    jsr       P_WRSEC             B = 0 or the error, C is kept
+                    puls      u,pc
 
 * GetStat
 *

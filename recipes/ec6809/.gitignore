@@ -2,3 +2,5 @@
 bootrom
 inetd.conf
 *.sd
+io_eprom_nos9.bin
+io_eprom_nos9.lst

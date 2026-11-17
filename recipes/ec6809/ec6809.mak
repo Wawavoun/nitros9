@@ -5,14 +5,20 @@
 #   bootrom   8 KB ROM image: krn krnp2 init boot_ec6809spi, padded to 3840
 #             bytes, then the REL module; padded at the start to 8192.
 #             The upper 4 KB goes at $F000-$FFFF.
+#   io_eprom_nos9.bin  24 KB, the NitrOS-9 part of the I/O board EPROM,
+#             pages $10-$3F of an AT28C256 (chip bytes $2000-$7FFF), with
+#             its listing io_eprom_nos9.lst. Join it by hand after the
+#             8 KB FLEX part (IO_EPROM_V6.bin) to program the chip.
 #   bootfile  OS9Boot: ioman sysgo clocks SCF RBF shell_21
 #   $(DSKIMAGE)  disk image with OS9Boot, CMDS, SYS, DEFS and startup,
 #             65536 sectors (16 MB)
 #   $(SDIMAGE)   the same disk laid out for the SD card: sector N in the
 #             first half of block N. Write it to the whole card with dd.
 #
-# Disk I/O and the RTC go through the I/O board EPROM (IO_EPROM_V6):
-# SPI SD cards on CS0 and CS1, DS3231 on I2C. The tick is VIA T1.
+# Disk I/O and the RTC go through the NitrOS-9 part of the I/O board
+# EPROM, io_eprom_nos9.asm in this directory (pages $10-$3F of an
+# AT28C256; the FLEX part is pages $00-$0F): SPI SD cards on CS0 and CS1,
+# DS3231 on I2C. The tick is VIA T1.
 # BOOTCS picks the boot card and /DD: 0 = CS0, 1 = CS1.
 #
 # Sources come from level1/ec6809 first (vpath), then the generic
@@ -107,7 +113,10 @@ DEFS    = defsfile os9.d rbf.d scf.d ec6809.d
 
 STARTUP = $(L1PD)/startup
 
-all: banner libs bootrom $(DSKIMAGE) $(SDIMAGE)
+IOROM     = io_eprom_nos9.bin
+IOROMAS   = lwasm --6809 --format=raw
+
+all: banner libs bootrom $(IOROM) $(DSKIMAGE) $(SDIMAGE)
 
 banner:
 	@$(ECHO) "************************************************************"
@@ -128,6 +137,10 @@ bootrom: $(addprefix $(MODDIR)/,$(BOOTROM) rel)
 	$(MERGE) bootrom_p1 $(MODDIR)/rel > $@
 	$(PADROM) 8192 -b $@
 	$(RM) bootrom_p1
+	@ls -l $@
+
+$(IOROM): io_eprom_nos9.asm
+	$(IOROMAS) -o$@ -l$(basename $@).lst $<
 	@ls -l $@
 
 bootfile: $(addprefix $(MODDIR)/,$(BOOTFILE))
@@ -230,7 +243,7 @@ info:
 	@$(ECHO) "SD card:   $(SDIMAGE) (boot card CS$(BOOTCS))"
 
 clean:
-	$(RM) bootrom bootrom_p1 bootfile buildinfo helpmsg inetd.conf *.dsk *.sd *.list *.map
+	$(RM) bootrom bootrom_p1 io_eprom_nos9.bin io_eprom_nos9.lst bootfile buildinfo helpmsg inetd.conf *.dsk *.sd *.list *.map
 	-rm -rf $(OBJDIR) $(LIBDIR) $(MODDIR) $(DEFDIR)
 
 .PHONY: all banner modules cmds info clean libs

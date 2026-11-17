@@ -2,7 +2,8 @@
 * Clock2 - EC-6809 DS3231 RTC driver
 *
 * The DS3231 is on the I/O board I2C bus (PCF8584). It is reached
-* through the public entries of IO_EPROM_V6, page 1:
+* through the public entries of the NitrOS-9 part of the I/O board EPROM
+* (recipes/ec6809/io_eprom_nos9.asm), page $10:
 *   P_I2C_INIT, P_I2C_START, P_I2C_WRITE, P_I2C_STOP
 *   P_RTC_GET_BYTE (register A -> value B), P_BCDHEX
 * The RTC must run in 24-hour mode. Years are 2000-2099.
@@ -15,6 +16,8 @@
 * Created from clock2_ec6809sd, without the Arduino.
 *   2      2026/11/16  Philippe Roehr
 * Init reads the RTC, so the time is right from boot.
+*   3      2026/11/17  Philippe Roehr
+* Uses the NitrOS-9 EPROM part on page $10.
 
                     nam       Clock2
                     ttl       EC-6809 DS3231 RTC driver
@@ -26,7 +29,7 @@
 tylg                set       Sbrtn+Objct
 atrv                set       ReEnt+rev
 rev                 set       $00
-edition             set       2
+edition             set       3
 
 RTC.Base            equ       $0000
 
@@ -49,7 +52,7 @@ JmpTable
 * GetTime cannot start an I2C transfer in the middle of this one.
 SetTime             pshs      u,y,x,d,cc
                     orcc      #IntMasks
-                    bsr       Page1
+                    bsr       PageN
                     jsr       P_I2C_START
                     bne       SetStop
                     ldb       #RTC.Addr
@@ -93,8 +96,8 @@ TB2                 pshs      b
                     adda      ,s+
                     rts
 
-* Page1 - map the EPROM public entries.
-Page1               lda       #1
+* PageN - map the EPROM public entries.
+PageN               lda       #NOSPAGE
                     sta       >IOPAGE
                     rts
 
@@ -110,7 +113,7 @@ GetTime             pshs      u,y,x,d
                     bne       GetSoft             an EPROM call is active
                     lda       >PAGEID             page now mapped
                     pshs      a
-                    bsr       Page1
+                    bsr       PageN
                     bsr       ReadRTC
                     puls      a                   Z is kept
                     sta       >IOPAGE             back to the page found
@@ -164,7 +167,7 @@ RdTab               fcb       6,$FF,5,$1F,4,$3F,2,$3F,1,$7F,0,$7F,$FF
 * read, D.Tick is set to a full second instead; when it is not, the
 * default time and the forced GetTime are kept.
 Init                pshs      u,y,x,d,cc
-                    bsr       Page1               EPROM page 1
+                    bsr       PageN               EPROM page $10
                     jsr       P_I2C_INIT
                     bsr       ReadRTC
                     bne       InitEx              no RTC, keep the default time
