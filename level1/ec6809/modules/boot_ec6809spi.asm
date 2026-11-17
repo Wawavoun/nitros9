@@ -3,7 +3,7 @@
 *
 * Loads OS9Boot from an SD card on the I/O board SPI interface.
 * The card is read through the NitrOS-9 part of the I/O board EPROM
-* (recipes/ec6809/io_eprom_nos9.asm), public entries on page $10:
+* (level1/ec6809/ioeprom/io_eprom_nos9.asm), public entries on page $10:
 *   P_NINIT   set up the EPROM variables, probe CS0 and CS1
 *   P_SDSTAT  flag of one card
 *   P_RDSEC   read one 256-byte sector, A = card, B:X = LSN, U = buffer

@@ -2,7 +2,7 @@
 * rbec6809spi - EC-6809 SPI SD card RBF driver
 *
 * Drives the two SD sockets of the I/O board through the NitrOS-9 part of
-* the I/O board EPROM (recipes/ec6809/io_eprom_nos9.asm), page $10:
+* the I/O board EPROM (level1/ec6809/ioeprom/io_eprom_nos9.asm), page $10:
 *   drive 0 = CS0, drive 1 = CS1 (descriptor IT.DRV).
 * Each OS-9 sector is the first half of SD block LSN (P_RDSEC and
 * P_WRSEC, 24-bit LSN). The second half of each block is written as zeros.

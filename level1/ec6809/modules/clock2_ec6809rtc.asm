@@ -3,7 +3,7 @@
 *
 * The DS3231 is on the I/O board I2C bus (PCF8584). It is reached
 * through the public entries of the NitrOS-9 part of the I/O board EPROM
-* (recipes/ec6809/io_eprom_nos9.asm), page $10:
+* (level1/ec6809/ioeprom/io_eprom_nos9.asm), page $10:
 *   P_I2C_INIT, P_I2C_START, P_I2C_WRITE, P_I2C_STOP
 *   P_RTC_GET_BYTE (register A -> value B), P_BCDHEX
 * The RTC must run in 24-hour mode. Years are 2000-2099.

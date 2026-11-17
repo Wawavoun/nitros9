@@ -16,7 +16,7 @@
 #             first half of block N. Write it to the whole card with dd.
 #
 # Disk I/O and the RTC go through the NitrOS-9 part of the I/O board
-# EPROM, io_eprom_nos9.asm in this directory (pages $10-$3F of an
+# EPROM, level1/ec6809/ioeprom/io_eprom_nos9.asm (pages $10-$3F of an
 # AT28C256; the FLEX part is pages $00-$0F): SPI SD cards on CS0 and CS1,
 # DS3231 on I2C. The tick is VIA T1.
 # BOOTCS picks the boot card and /DD: 0 = CS0, 1 = CS1.
@@ -139,7 +139,7 @@ bootrom: $(addprefix $(MODDIR)/,$(BOOTROM) rel)
 	$(RM) bootrom_p1
 	@ls -l $@
 
-$(IOROM): io_eprom_nos9.asm
+$(IOROM): $(L1PD)/ioeprom/io_eprom_nos9.asm
 	$(IOROMAS) -o$@ -l$(basename $@).lst $<
 	@ls -l $@
 

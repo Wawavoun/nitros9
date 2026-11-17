@@ -83,7 +83,7 @@ VIAIFR              equ       $0D                 interrupt flag register
 VIAIER              equ       $0E                 interrupt enable register
 
 ********************************************************************
-* I/O board EPROM, NitrOS-9 part (recipes/ec6809/io_eprom_nos9.asm),
+* I/O board EPROM, NitrOS-9 part (level1/ec6809/ioeprom/io_eprom_nos9.asm),
 * SPI SD cards and DS3231 RTC.
 *
 * The EPROM is a paged window at $E800-$E9FF. Pages $10-$3F of the
