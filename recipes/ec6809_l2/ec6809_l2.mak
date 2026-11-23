@@ -80,6 +80,16 @@ CMDS = asm attr backup bawk binex build cmp copy \
 	merge mfree mmap modpatch more padrom park pmap proc procs printerr \
 	prompt pwd pxd rename save setime sleep smap tee tmode touch tsmon \
 	unlink verify xmode
+# BASIC09 comes from the sibling nitros9-languages checkout, when present.
+# The same binaries run at Level 1 and Level 2. gfx/gfx2 are CoCo graphics
+# packages and are left out.
+ifneq ($(wildcard $(LANGUAGES)/basic09),)
+vpath %.asm $(LANGUAGES)/basic09
+AFLAGS += -I$(LANGUAGES)/basic09
+BASIC09_CPU = 6809
+CMDS += basic09 runb inkey syscall
+endif
+
 # Merged command packs added to /CMDS
 CMDS_MERGED = shell utilpak1
 CMDS_DISK = $(CMDS) $(CMDS_MERGED)
@@ -246,6 +256,16 @@ $(MODDIR)/shell: $(addprefix $(MODDIR)/,$(SHELLMODS)) | $(MODDIR)
 	$(MERGE) $(addprefix $(MODDIR)/,$(SHELLMODS)) >$@
 $(MODDIR)/utilpak1: $(addprefix $(MODDIR)/,$(UTILPAK1)) | $(MODDIR)
 	$(MERGE) $(addprefix $(MODDIR)/,$(UTILPAK1)) >$@
+
+$(MODDIR)/basic09: $(LANGUAGES)/basic09/basic09_$(BASIC09_CPU) | $(MODDIR)
+	$(CP) $< $@
+
+$(MODDIR)/runb: $(LANGUAGES)/basic09/runb_$(BASIC09_CPU) | $(MODDIR)
+	$(CP) $< $@
+
+# The languages makefiles include $(NITROS9DIR)/rules.mak: pass it down.
+$(LANGUAGES)/basic09/basic09_$(BASIC09_CPU) $(LANGUAGES)/basic09/runb_$(BASIC09_CPU):
+	$(MAKE) -C $(dir $@) $(notdir $@) NITROS9DIR=$(NITROS9DIR)
 
 info:
 	@$(ECHO) "*** NitrOS-9/$(CPU) Level $(LEVEL) for the $(MACHINE) ($(PORT)) ***"

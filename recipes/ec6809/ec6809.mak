@@ -232,8 +232,9 @@ $(MODDIR)/basic09: $(LANGUAGES)/basic09/basic09_$(BASIC09_CPU) | $(MODDIR)
 $(MODDIR)/runb: $(LANGUAGES)/basic09/runb_$(BASIC09_CPU) | $(MODDIR)
 	$(CP) $< $@
 
+# The languages makefiles include $(NITROS9DIR)/rules.mak: pass it down.
 $(LANGUAGES)/basic09/basic09_$(BASIC09_CPU) $(LANGUAGES)/basic09/runb_$(BASIC09_CPU):
-	$(MAKE) -C $(dir $@) $(notdir $@)
+	$(MAKE) -C $(dir $@) $(notdir $@) NITROS9DIR=$(NITROS9DIR)
 
 info:
 	@$(ECHO) "*** NitrOS-9/$(CPU) Level $(LEVEL) for the $(MACHINE) ($(PORT)) ***"
