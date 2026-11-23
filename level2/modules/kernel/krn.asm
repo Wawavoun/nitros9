@@ -70,6 +70,13 @@ MName               fcs       /Krn/
                     fcb       Edition   ; define byte value(s) Edition
 
 * FILL - all unused bytes are now here
+*[[[ EC-6809 V6 PORT
+* No fill: krn is padded at its end instead, so that the register stack
+* lands at $FEDF and the task register byte $FE00 stays free (see the
+* end of the module).
+                  IFNE    ec6809  ; begin conditional assembly for ec6809
+                  ELSE
+*]]] EC-6809 V6 PORT
                   IFNE    H6309   ; begin conditional assembly for H6309
                     fcc       /www.nitros9.org /
                     fcc       /www.nitros9.org /
@@ -101,6 +108,7 @@ MName               fcs       /Krn/
                   ENDC
                   ENDC
                   ENDC
+                  ENDC              ; match IFNE ec6809
 
 * The dispatch table.
 * The kernel copies this to low RAM starting at D.Clock.
@@ -135,12 +143,23 @@ R.Flip0             equ       *         ; define assembler symbol R.Flip0
                     sta       >DAT.Task switch to system task
                     puls      a         recover A
                   ELSE
+*[[[ EC-6809 V6 PORT
+* As Pico-Thing, and ROMOFF stays set: the kernel window must not turn
+* back into ROM under the running kernel.
+                  IFNE    ec6809  ; begin conditional assembly for ec6809
+                    pshs      a         save off A
+                    lda       #ROMOFF   task 0 = system, kernel window kept
+                    sta       >DAT.Task switch to system task
+                    puls      a         recover A
+                  ELSE
+*]]] EC-6809 V6 PORT
                     pshs      a         ; save off A
                     lda       <D.TINIT  ; get the value from the shadow register
                     anda      #$FE      ; force the task register to 0
                     sta       <D.TINIT  ; save it back to the shadow register
                     sta       >DAT.Task ; and to the DAT hardware
                     puls      a         ; recover A
+                  ENDC              ; match IFNE ec6809
                   ENDC
                   ENDC
                     clr       <D.SSTskN ; clear the system task number
@@ -311,7 +330,7 @@ done@               ldx       #$0000    ; start clearing at this address
                     std       <D.CCStk  ; set pointer to top of global memory to $2000
                     lda       #$01      ; set task user table to $0100
                   ELSE
-                  IFNE    picothing ; begin conditional assembly for picothing
+                  IFNE    picothing+ec6809 ; begin conditional assembly for picothing+ec6809
                     ldx       #$0000    picothing has no REL to clear page 0
                     ldy       #$2000    clear all of pages 0 and 1
                   ELSE
@@ -362,6 +381,23 @@ l@                  std       ,x++      ; now clear memory 16 bits at a time
                     stb       >WatchCtl arm watchpoint: $FFF0-$FFFF becomes read-only
                     puls      b
                   ENDC
+
+*[[[ EC-6809 V6 PORT
+* Boot debug output and crash handler: routines in the $FFxx ROM page,
+* which stays readable whatever ROMOFF is. D.BtBug prints A on the
+* console ACIA; D.Crash prints CRASH and stops.
+                  IFNE    ec6809  ; begin conditional assembly for ec6809
+                    pshs      b         keep A:B = $0100
+                    ldb       #$7E      JMP extended opcode
+                    stb       <D.BtBug
+                    stb       <D.Crash
+                    ldx       #ROM.BtBug
+                    stx       <D.BtBug+1
+                    ldx       #ROM.Crash
+                    stx       <D.Crash+1
+                    puls      b
+                  ENDC
+*]]] EC-6809 V6 PORT
 
 * Set up system variables in DP
                     std       <D.Tasks  ; set the task structure pointer to $0100
@@ -427,7 +463,7 @@ l@                  std       ,x++      ; now clear memory 16 bits at a time
                     leay      >DisTable,pcr ; point to the table of absolute vector addresses
                   ELSE
 *]]] Wildbits PORT
-                  IFNE    picothing ; begin conditional assembly for picothing
+                  IFNE    picothing+ec6809 ; begin conditional assembly for picothing+ec6809
                     leay      >DisTable,pcr ; picothing islands push DisTable past 8-bit pcr range
                   ELSE
                     leay      <DisTable,pcr ; point to the table of absolute vector addresses
@@ -799,6 +835,15 @@ l@                  sta       b,x       ; store the flag in the appropriate offs
 
 * Verify the modules in the boot area and update/build a module index.
                     lbsr      I.VBlock  ; perform module validation
+*[[[ EC-6809 V6 PORT
+* The ROM passed the size of the modules below $E000 only: $E000-$EFFF is
+* the I/O page and must not be scanned. krn is in the kernel window.
+                  IFNE    ec6809  ; begin conditional assembly for ec6809
+                    ldx       #Bt.Start ; the kernel window
+                    ldd       #KrnSlot  ; krn and its tail
+                    lbsr      I.VBlock  ; validate krn
+                  ENDC
+*]]] EC-6809 V6 PORT
                     bsr       KrnSystemMemoryMap ; then mark the system map
 
                   IFEQ    BtPreld ; begin conditional assembly for BtPreld
@@ -1246,7 +1291,7 @@ S.SysIRQ
                     clr       <D.SSTskN ; clear out the memory copy (task 0)
                     jsr       [>D.SvcIRQ] ; call the routine (normally Clock calling D.Poll)
                     inc       <D.SSTskN ; save the task number for system state
-                  IFNE    picothing ; begin conditional assembly for picothing
+                  IFNE    picothing+ec6809 ; begin conditional assembly for picothing+ec6809
 * Pico-Thing: D.TINIT holds raw task#, just write it to DAT.Task
                     lda       <D.TINIT  get the user's task number
                     sta       >DAT.Task switch to user task
@@ -1276,7 +1321,7 @@ KrnSysProcDesc      ldx       <D.SysPrc ; get the system process descriptor poin
                     orcc      #IntMasks ; shut off interrupts
                     sta       <D.SSTskN ; save the task number for system state
                     beq       Fst2      ; if task 0, we're done
-                  IFNE    picothing ; begin conditional assembly for picothing
+                  IFNE    picothing+ec6809 ; begin conditional assembly for picothing+ec6809
 * Pico-Thing: D.TINIT holds raw task#, just write it to DAT.Task
                     lda       <D.TINIT  get the user's task number
                   ELSE
@@ -1287,12 +1332,25 @@ KrnSysProcDesc      ldx       <D.SysPrc ; get the system process descriptor poin
 Fst2                leas      ,u        ; put stack ptr into U
                     rti                 ; return
 
+*[[[ EC-6809 V6 PORT
+* $FE00 is the task register. With ROMOFF = 1 each write to it also
+* writes the RAM byte under it, and SWICall reads that byte back, so no
+* code may be there. The rti above does not fall through, so KrnHole
+* fills from here up to and including $FE00. Its value $20 (task 0 +
+* ROMOFF) is what SWICall reads before the first write. If the code
+* above reaches $FE00, the fill length goes negative and the assembly
+* fails: then move KrnHole to an earlier rts, rti or jmp.
+                  IFNE    ec6809  ; begin conditional assembly for ec6809
+KrnHole             fill      ROMOFF,DAT.Task-Where+1-*
+                  ENDC
+*]]] EC-6809 V6 PORT
+
 * Switch to a new process.
 *
 * Entry: X = The Process descriptor pointer.
 *        U = The stack pointer.
 KrnJoin2            equ       *         ; define assembler symbol KrnJoin2
-                  IFNE    picothing ; begin conditional assembly for picothing
+                  IFNE    picothing+ec6809 ; begin conditional assembly for picothing+ec6809
 * Pico-Thing: D.TINIT holds the raw task# (set by KrnWeGngBack); write it
 * straight to the DAT.  The CoCo3 task-1 bit set (ora/oim #$01) corrupts an
 * even task number, so it is wrong for the Pico-Thing's N-task DAT - on both
@@ -1330,7 +1388,7 @@ MyRTI               rti                 ; return from IRQ
 * Execute routine in task 1 pointed to by U.
 * This comes from user requested SWI vectors.
 KrnJoin3            equ       *         ; define assembler symbol KrnJoin3
-                  IFNE    picothing ; begin conditional assembly for picothing
+                  IFNE    picothing+ec6809 ; begin conditional assembly for picothing+ec6809
 * Pico-Thing: D.TINIT holds the raw task#; write it straight to the DAT
 * (the CoCo3 ora/oim #$01 toggle is wrong for the N-task DAT, both CPUs)
                     ldb       <D.TINIT  get the user's task number
@@ -1351,7 +1409,7 @@ KrnJoin3            equ       *         ; define assembler symbol KrnJoin3
 *  by <D.Flip1). All registers are already preserved on stack for the RTI.
 S.Flip1             ldb       #2        ; get the tsk image entry number x2 for Grfdrv (task 1)
                     bsr       KrnWeGngBack ; copy over the DAT image
-                  IFNE    picothing ; begin conditional assembly for picothing
+                  IFNE    picothing+ec6809 ; begin conditional assembly for picothing+ec6809
 * Pico-Thing: D.TINIT set by KrnWeGngBack, write directly (GrfDrv not used;
 * the CoCo3 ora/oim #$01 toggle is wrong for the N-task DAT, both CPUs)
                     lda       <D.TINIT  get the task number
@@ -1371,15 +1429,21 @@ S.Flip1             ldb       #2        ; get the tsk image entry number x2 for 
 
 * Set up the MMU in task 1, B=Task # to swap to, shifted left 1 bit.
 KrnWeGngBack        equ       *
-                  IFEQ    picothing ; assemble when not picothing
+                  IFEQ    picothing+ec6809 ; assemble when not picothing or ec6809
                     cmpb      <D.Task1N ; are we going back to the same task?
                     beq       KrnReturn2 ; without the DAT image changing?
                     stb       <D.Task1N ; no, save current task in map type 1
                   ENDC
-                  IFNE    picothing ; begin conditional assembly for picothing
+                  IFNE    picothing+ec6809 ; begin conditional assembly for picothing+ec6809
 * hardware DAT registers are persistent per task.
 * TstImg/F$SetTsk already copied if ImgChg was set.
                     lsrb                raw task number
+*[[[ EC-6809 V6 PORT
+* D.TINIT is the value written to the task register: task + ROMOFF.
+                  IFNE    ec6809  ; begin conditional assembly for ec6809
+                    orb       #ROMOFF   keep the kernel window
+                  ENDC
+*]]] EC-6809 V6 PORT
                     stb       <D.TINIT  save for DAT.Task write sites
                     rts
                   ELSE
@@ -1395,7 +1459,7 @@ KrnWeGngBack        equ       *
                     ldx       #DAT.Regs+8 ; get the MMU start register for process
                   ENDC
                   ENDC
-                  IFEQ    picothing ; assemble when not picothing
+                  IFEQ    picothing+ec6809 ; assemble when not picothing or ec6809
                     ldu       <D.TskIPt ; get the task image pointer table
                     ldu       b,u       ; and the address of the DAT image
                   ENDC
@@ -1404,7 +1468,7 @@ KrnWeGngBack        equ       *
 * X = address of 1st DAT MMU register to update
 * U = address of DAT image to update into MMU
 KrnActualMMUBlock   leau      1,u       ; point to the actual MMU block
-                  IFNE    picothing ; begin conditional assembly for picothing
+                  IFNE    picothing+ec6809 ; begin conditional assembly for picothing+ec6809
 * Pico-Thing DAT uses 1 byte per block register (not 2).
 * 8 single-byte copies replace the 4 double-byte copies used by CoCo3.
                     lda       #DAT.BlCt loop counter for all 8 blocks
@@ -1460,6 +1524,7 @@ CrashDump           fill      255,KrnTail-*  ; pad up to the tail (computed at a
                   ENDC
 *]]] Wildbits PORT
 
+
 * Execute FIRQ vector (called from $FEF4)
 FIRQVCT             ldx       #D.FIRQ   ; get the DP offset of the vector
                     bra       KrnFasterClrXxxx ; go execute it
@@ -1469,8 +1534,16 @@ IRQVCT              orcc      #IntMasks ; disable interrupts
                     ldx       #D.IRQ    ; get the DP offset of the vector
 
 * Execute interrupt vector, B=DP Vector offset
+*[[[ EC-6809 V6 PORT
+                  IFNE    ec6809  ; begin conditional assembly for ec6809
+KrnFasterClrXxxx    lda       #ROMOFF   ; task 0, kernel window kept
+                    sta       >DAT.Task ; force to task 0 (system state)
+                    clra                ; A = 0 for DP
+                  ELSE
+*]]] EC-6809 V6 PORT
 KrnFasterClrXxxx    clra                ; (faster than CLR >$xxxx)
                     sta       >DAT.Task ; force to task 0 (system state)
+                  ENDC
                   IFNE    H6309   ; begin conditional assembly for H6309
                     tfr       0,dp      ; setup the DP
                   ELSE
@@ -1483,6 +1556,12 @@ MapGrf              equ       *         ; come here from elsewhere, too
 * builds; D.TINIT is preserved here (the task is restored later).
                     clra                task 0 = system
                   ELSE
+*[[[ EC-6809 V6 PORT
+* As Pico-Thing, with the kernel window kept.
+                  IFNE    ec6809  ; begin conditional assembly for ec6809
+                    lda       #ROMOFF   task 0 = system, kernel window kept
+                  ELSE
+*]]] EC-6809 V6 PORT
                   IFNE    H6309   ; begin conditional assembly for H6309
                     aim       #$FE,<D.TINIT ; switch the shadow register to system state
                     lda       <D.TINIT  ; set the DAT again just in case timer is used
@@ -1491,6 +1570,7 @@ MapGrf              equ       *         ; come here from elsewhere, too
                     anda      #$FE      ; clear the task 0 bit
                     sta       <D.TINIT  ; and save it back
                   ENDC
+                  ENDC              ; match IFNE ec6809
                   ENDC
 MapT0               sta       >DAT.Task ; come here from elsewhere, too
                     jmp       [,x]      ; execute it
@@ -1523,6 +1603,17 @@ SWICall             ldb       [R$PC,s]  ; get the op-code of the system call
 * below rewrites the same task, harmlessly sharing the common tail).
 * GrfDrv is not used on Pico-Thing, so no D.SSTskN test is needed.
                   ELSE
+*[[[ EC-6809 V6 PORT
+* As Pico-Thing. The V6 task register cannot be read, but with ROMOFF = 1
+* every write to it also writes the RAM byte under $FE00, which krn keeps
+* free: reading $FE00 gives the task the SWI was issued from, with
+* ROMOFF. Task 0 is system state. A keeps ROMOFF for the write below.
+                  IFNE    ec6809  ; begin conditional assembly for ec6809
+                    lda       >DAT.Task get the task the SWI was issued from
+                    bita      #%00011111 task 0?
+                    beq       KrnFasterClrXxxx system state: dispatch on the current stack
+                  ELSE
+*]]] EC-6809 V6 PORT
 * NOTE: Alan DeKok claims that this is BAD.  It crashed Colin McKay's
 * CoCo 3.  Instead, we should do a clra/sta >DAT.Task.
 *         clr   >DAT.Task       go to map type 1
@@ -1549,6 +1640,7 @@ SWICall             ldb       [R$PC,s]  ; get the op-code of the system call
                     beq       MapT0     ; in map 0; restore the hardware and do system service
                     tst       <D.SSTskN ; get system state 0,1
                     bne       MapGrf    ; if in grfdrv, go to map 0 and do system service
+                  ENDC              ; match IFNE ec6809
                   ENDC
 
 * The preceding few lines are necessary, as all SWI's still pass through
@@ -1580,6 +1672,17 @@ SWIVCT              ldx       #D.SWI    ; get the DP offset of the vector
 NMIVCT              ldx       #D.NMI    ; get the DP offset of the vector
                     bra       KrnFasterClrXxxx ; go execute it
 
+*[[[ EC-6809 V6 PORT
+* krn sits at $F000 in the kernel window. The ROM vectors point to the
+* table at KrnVec ($FEEE), so the register stack must start at $FEDF:
+* pad up to the 3 CRC bytes that emod adds. The table uses LBRA, so it
+* reaches its targets across the padding. If krn grows too big, the
+* fill length goes negative and the assembly fails. See also KrnHole.
+                  IFNE    ec6809  ; begin conditional assembly for ec6809
+KrnPad              fill      $12,KrnVec-Where-14-1-3-*
+                  ENDC
+*]]] EC-6809 V6 PORT
+
 * The end of the kernel module is here
                     emod
 eom                 equ       *         ; define assembler symbol eom
@@ -1605,6 +1708,17 @@ SWIStack
 * kernel loads into memory.  All interrupts come through the 6809 vectors at
 * $FFF0-$FFFE and get directed to here. From here, the BRA takes CPU control
 * to the various handlers in the kernel.
+*[[[ EC-6809 V6 PORT
+* LBRA: 3 bytes as BRA+NOP, and it reaches across KrnPad.
+                  IFNE    ec6809  ; begin conditional assembly for ec6809
+                    lbra      SWI3VCT   ; sWI3 vector comes here
+                    lbra      SWI2VCT   ; sWI2 vector comes here
+                    lbra      FIRQVCT   ; fIRQ vector comes here
+                    lbra      IRQVCT    ; iRQ vector comes here
+                    lbra      SWIVCT    ; sWI vector comes here
+                    lbra      NMIVCT    ; nMI vector comes here
+                  ELSE
+*]]] EC-6809 V6 PORT
                     bra       SWI3VCT   ; sWI3 vector comes here
                     nop       ;         no operation placeholder
                     bra       SWI2VCT   ; sWI2 vector comes here
@@ -1617,5 +1731,6 @@ SWIStack
                     nop       ;         no operation placeholder
                     bra       NMIVCT    ; nMI vector comes here
                     nop       ;         no operation placeholder
+                  ENDC              ; match IFNE ec6809
 
                     end

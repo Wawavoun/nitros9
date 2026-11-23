@@ -19,6 +19,14 @@ FDebug              equ       *         ; define assembler symbol FDebug
                     ldb       #E$UnkSvc ; load B from #E$UnkSvc
 leave               rts                 ; return to caller
 
+*[[[ EC-6809 V6 PORT
+* The ROM entry clears ROMOFF and goes to the reset entry; that code is
+* in the $FFxx ROM page, readable whatever ROMOFF is.
+                  IFNE    ec6809  ; begin conditional assembly for ec6809
+REBOOT              orcc      #IntMasks ; turn off IRQ's
+                    jmp       ROM.Reboot ; back to ROM, then reset
+                  ELSE
+*]]] EC-6809 V6 PORT
 * NOTE: HIGHLY MACHINE DEPENDENT CODE!
 * THIS CODE IS SPECIFIC TO THE COCO 3!
 REBOOT              orcc      #IntMasks ; turn off IRQ's
@@ -68,3 +76,4 @@ Lp                  sta       8,x       ; put into map 1
                     fcb       $11,$3D,$00 ; define byte value(s) $11,$3D,$00
 Reset               jmp       [$FFFE]   ; do a reset
 CodeSize            equ       *-ReBootLoc ; define assembler symbol CodeSize
+                  ENDC              ; match IFNE ec6809

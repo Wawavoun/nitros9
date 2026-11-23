@@ -171,7 +171,11 @@ Init                pshs      u,y,x,d,cc
                     jsr       P_I2C_INIT
                     bsr       ReadRTC
                     bne       InitEx              no RTC, keep the default time
+                    ifgt      Level-1
+                    lda       #TkPerSec           Level 2 has no D.TSec
+                    else
                     lda       >D.TSec             a full second before the next count
+                    endc
                     sta       >D.Tick
 InitEx              puls      cc,d,x,y,u,pc
 

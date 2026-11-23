@@ -1,0 +1,4 @@
+.defs/
+bootrom
+bootrom.lst
+*.sd

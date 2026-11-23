@@ -65,7 +65,7 @@ FAlltskJoin         equ       *         ; define assembler symbol FAlltskJoin
                     andb      #^ImgChg  ; mask B with #^ImgChg
                     stb       P$State,x ; store B at P$State,x
                   ENDC
-                  IFEQ    picothing ; assemble when not picothing
+                  IFEQ    picothing+ec6809 ; assemble when not picothing or ec6809
                     clr       <D.Task1N ; task 1 DAT image has changed
                   ENDC
                     andcc     #^Carry   ; clear carry
@@ -75,7 +75,7 @@ FAlltskJoin         equ       *         ; define assembler symbol FAlltskJoin
                     ldx       <D.TskIPt ; get task image table pointer
                     lslb                ; account for 2 bytes/entry
                     stu       b,x       ; save DAT image pointer in task table
-                  IFNE    picothing ; begin conditional assembly for picothing
+                  IFNE    picothing+ec6809 ; begin conditional assembly for picothing+ec6809
 * Pico-Thing: every task has its own hardware DAT registers.
 * Compute X = DAT.Regs + task# x 8.  B = task# x 2 here.
                     pshs      b         ; preserve B

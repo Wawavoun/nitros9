@@ -82,7 +82,7 @@ LChinese            stx       ,y++      ; 8 \                Clear 2 bytes
 FAllprcTarget       stx       ,y++      ; store X at ,y++
                     decb                ; done?
                     bne       FAllprcTarget ; no, keep going
-                  IFNE    picothing ; begin conditional assembly for picothing
+                  IFNE    picothing+ec6809 ; begin conditional assembly for picothing+ec6809
 * Slot 7 is always the kernel block (physical page KrnBlk).  Unlike CoCo3
 * where hardware forces block 7 to ROM/IO, picothing needs the kernel page
 * explicitly in every process DAT image for vectors and SWI handlers.
