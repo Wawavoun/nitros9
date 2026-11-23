@@ -93,7 +93,7 @@ DATLP   DECA                PREPARE NEXT VALUE
 
 PowMsg          fcb $d,$a
                 fcc "DAT Init"
-                fcb 0
+                fcb $d,$a,0         new line: SysGo's banner follows
 
 
 * Entry
