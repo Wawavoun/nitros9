@@ -9,11 +9,6 @@
 * ------------------------------------------------------------------
 *   1      2017/05/08  Boisy G. Pitre
 * Created
-*   2      2026/11/23  Philippe Roehr
-* A framing error is a line Break (quit signal) only when the byte read
-* is $00; any other framing error is only reported, so a damaged
-* character no longer aborts a file transfer (kermit). Overrun is tested
-* in the status (B), not in A.
 *
 
                     nam       sc6850
@@ -152,7 +147,7 @@ RxBuff              rmb       RxBufDSz            default Rx buffer
 MemSize             equ       .
 
 rev                 set       0
-edition             set       2
+edition             set       1
 
                     mod       ModSize,ModName,Drivr+Objct,ReEnt+rev,ModEntry,MemSize
 
@@ -702,24 +697,16 @@ IRQSvc
                     bitb      #Stat.Err           error(s)?
                     beq       ChkRDRF             no, go check Rx data
 * Error-handling
-                    lda       DataReg,x           read Rx data register to clear ACIA error flags
-                    bitb      #Stat.Frm           framing error?
+                    tst       DataReg,x           read Rx data register to clear ACIA error flags
+                    bitb      #Stat.Frm           framing error (assume Rx line Break)?
                     beq       ChkParty            no, go check if parity error...
-* A line Break reads $00 with a framing error: only then send the quit
-* signal. Any other framing error is a damaged character: report it only
-* (a file transfer must not be aborted by it).
-                    tsta                          $00, a line Break?
-                    bne       FrmOnly             no, a damaged character
                     lda       <V.QUIT             default to keyboard quit ("Break") code
                     bra       RxBreak             go pretend we've received V.QUIT character...
-FrmOnly             lda       #FrmingEr           mark framing error
-                    bra       ChkOvRun            go check overrun error...
 
-ChkParty            clra                          no error bit yet
-                    bitb      #Stat.Par           parity error?
+ChkParty            bitb      #Stat.Par           parity error?
                     beq       ChkOvRun            no, go check overrun error...
                     lda       #ParityEr           mark parity error
-ChkOvRun            bitb      #Stat.Ovr           overrun error (in the status, B)?
+ChkOvRun            bita      #Stat.Ovr           overrun error?
                     beq       SaveErrs            no, go save errors...
                     ora       #OvrFloEr           mark overrun error
 SaveErrs            ora       <V.ERR
