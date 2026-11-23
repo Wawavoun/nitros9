@@ -80,6 +80,12 @@ CMDS = asm attr backup bawk binex build cmp copy \
 	merge mfree mmap modpatch more padrom park pmap proc procs printerr \
 	prompt pwd pxd rename save setime sleep smap tee tmode touch tsmon \
 	unlink verify xmode
+# Ready-made command modules (third-party, no source) in level1/ec6809/cmds,
+# shared with the Level 1 build: every file there without a source or text
+# extension is copied as it is to /DD/CMDS, for example kermit.
+BINCMDS := $(notdir $(filter-out %.asm %.a %.txt %.md %.lst,$(wildcard $(L1PCD)/*)))
+CMDS += $(BINCMDS)
+
 # BASIC09 comes from the sibling nitros9-languages checkout, when present.
 # The same binaries run at Level 1 and Level 2. gfx/gfx2 are CoCo graphics
 # packages and are left out.
@@ -256,6 +262,9 @@ $(MODDIR)/shell: $(addprefix $(MODDIR)/,$(SHELLMODS)) | $(MODDIR)
 	$(MERGE) $(addprefix $(MODDIR)/,$(SHELLMODS)) >$@
 $(MODDIR)/utilpak1: $(addprefix $(MODDIR)/,$(UTILPAK1)) | $(MODDIR)
 	$(MERGE) $(addprefix $(MODDIR)/,$(UTILPAK1)) >$@
+
+$(addprefix $(MODDIR)/,$(BINCMDS)): $(MODDIR)/%: $(L1PCD)/% | $(MODDIR)
+	$(CP) $< $@
 
 $(MODDIR)/basic09: $(LANGUAGES)/basic09/basic09_$(BASIC09_CPU) | $(MODDIR)
 	$(CP) $< $@

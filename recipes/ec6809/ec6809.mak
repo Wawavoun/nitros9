@@ -80,6 +80,12 @@ CMDS = asm attr backup bawk binex build calldbg cmp copy cputype \
 	rename save setime shellplus shell_21 sleep \
 	tee tmode touch tsmon tuneport unlink verify xmode
 
+# Ready-made command modules (third-party, no source) in level1/ec6809/cmds:
+# every file there without a source or text extension is copied as it is
+# to /DD/CMDS, for example kermit.
+BINCMDS := $(notdir $(filter-out %.asm %.a %.txt %.md %.lst,$(wildcard $(L1PCD)/*)))
+CMDS += $(BINCMDS)
+
 # BASIC09 comes from the sibling nitros9-languages checkout, when present.
 ifneq ($(wildcard $(LANGUAGES)/basic09),)
 vpath %.asm $(LANGUAGES)/basic09
@@ -225,6 +231,9 @@ $(MODDIR)/xmode: xmode.asm | $(MODDIR)
 
 $(MODDIR)/tmode: xmode.asm | $(MODDIR)
 	$(AS) $(AFLAGS) $< $(ASOUT)$@ -DTMODE=1
+
+$(addprefix $(MODDIR)/,$(BINCMDS)): $(MODDIR)/%: $(L1PCD)/% | $(MODDIR)
+	$(CP) $< $@
 
 $(MODDIR)/basic09: $(LANGUAGES)/basic09/basic09_$(BASIC09_CPU) | $(MODDIR)
 	$(CP) $< $@
