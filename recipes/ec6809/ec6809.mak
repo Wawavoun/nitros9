@@ -63,13 +63,13 @@ KERNEL   = krn krnp2
 SYSMODS  = ioman init sysgo sysgo_rom
 CLOCKS   = clock clock2_ec6809rtc
 RBF      = rbf.mn rbec6809spi.dr ddh0.dd h0.dd h1.dd
-SCF      = scf.mn vrn.dr nil.dd sc6850.dr term_sc6850.dt
+SCF      = scf.mn sc6850.dr term_sc6850.dt nil.dr nil.dd
 PIPE     = pipeman.mn piper.dr pipe.dd
 MODULES  = $(BOOTERS) $(KERNEL) $(SYSMODS) $(CLOCKS) $(RBF) $(SCF) $(PIPE)
 
 BOOTROM  = krn krnp2 init boot_ec6809spi
 BOOTFILE = ioman sysgo clock clock2_ec6809rtc scf.mn sc6850.dr term_sc6850.dt \
-           rbf.mn rbec6809spi.dr ddh0.dd h0.dd h1.dd $(WHICHSHELL)
+           nil.dr nil.dd rbf.mn rbec6809spi.dr ddh0.dd h0.dd h1.dd $(WHICHSHELL)
 
 # Commands
 CMDS = asm attr backup bawk binex build calldbg cmp copy cputype \
@@ -218,6 +218,12 @@ $(MODDIR)/h1.dd: rbdesc.asm | $(MODDIR)
 
 $(MODDIR)/term_sc6850.dt: term_sc6850.asm | $(MODDIR)
 	$(AS) $< $(ASOUT)$@ $(AFLAGS) -DHwBASE=0xEEA0
+
+# Lean /Nil pseudo-device (NIL selects /Nil over the /Zero default)
+$(MODDIR)/nil.dr: nzdrv.asm | $(MODDIR)
+	$(AS) $(AFLAGS) -DNIL=1 $(ASOUT)$@ $<
+$(MODDIR)/nil.dd: nzdesc.asm | $(MODDIR)
+	$(AS) $(AFLAGS) -DNIL=1 $(ASOUT)$@ $<
 
 # Command rules
 $(MODDIR)/pwd: pd.asm | $(MODDIR)
