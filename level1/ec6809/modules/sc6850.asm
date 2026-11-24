@@ -135,8 +135,8 @@ Wrk.Baud            rmb       1                   baud work byte (MUST immediate
 Wrk.XTyp            rmb       1                   extended type work byte
 
 regWbuf             rmb       2                   substitute for regW
-                  IFNE    picothing
-* On picothing regWbuf holds Write's pending Tx character across the TxE
+                  IFNE    picothing+ec6809
+* On picothing and ec6809 regWbuf holds Write's pending Tx character across the TxE
 * wait, which sleeps with IRQs enabled.  IRQSvc must not touch regWbuf or
 * a receive interrupt during an echo replaces the pending character
 * (typically with $00, transmitting a NUL), so IRQSvc uses irqWbuf.
@@ -703,10 +703,13 @@ IRQSvc
                     lda       <V.QUIT             default to keyboard quit ("Break") code
                     bra       RxBreak             go pretend we've received V.QUIT character...
 
-ChkParty            bitb      #Stat.Par           parity error?
+* A starts at 0 and the overrun test reads the status in B: testing A and
+* ORing it into V.ERR put the page of this static memory in the error bits.
+ChkParty            clra                          no error bits yet
+                    bitb      #Stat.Par           parity error?
                     beq       ChkOvRun            no, go check overrun error...
                     lda       #ParityEr           mark parity error
-ChkOvRun            bita      #Stat.Ovr           overrun error?
+ChkOvRun            bitb      #Stat.Ovr           overrun error?
                     beq       SaveErrs            no, go save errors...
                     ora       #OvrFloEr           mark overrun error
 SaveErrs            ora       <V.ERR
@@ -799,7 +802,7 @@ SavRxDat            equ       *
                     else
                     pshs      d
                     ldd       <RxDatLen
-                  IFNE    picothing
+                  IFNE    picothing+ec6809
                     std       <irqWbuf
                   ELSE
                     std       <regWbuf
@@ -828,7 +831,7 @@ SetLayDn            stx       <RxBufPut           set new Rx data laydown pointe
                     cmpw      <RxBufMax           at or past maximum fill point?
                     else
                     pshs      d
-                  IFNE    picothing
+                  IFNE    picothing+ec6809
                     ldd       <irqWbuf
                     addd      #1
                     std       <irqWbuf
