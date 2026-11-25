@@ -86,6 +86,10 @@ CMDS = asm attr backup bawk binex build calldbg cmp copy cputype \
 BINCMDS := $(notdir $(filter-out %.asm %.a %.txt %.md %.lst,$(wildcard $(L1PCD)/*)))
 CMDS += $(BINCMDS)
 
+# 68681 port A on the CPU board, hardware RTS/CTS. Not in OS9Boot: load it
+# by hand after boot with  load sc68681m sc68681 t1
+CMDS += sc68681m sc68681 t1
+
 # BASIC09 comes from the sibling nitros9-languages checkout, when present.
 ifneq ($(wildcard $(LANGUAGES)/basic09),)
 vpath %.asm $(LANGUAGES)/basic09
@@ -218,6 +222,9 @@ $(MODDIR)/h1.dd: rbdesc.asm | $(MODDIR)
 
 $(MODDIR)/term_sc6850.dt: term_sc6850.asm | $(MODDIR)
 	$(AS) $< $(ASOUT)$@ $(AFLAGS) -DHwBASE=0xEEA0
+
+$(MODDIR)/t1: term_sc68681.asm | $(MODDIR)
+	$(AS) $< $(ASOUT)$@ $(AFLAGS)
 
 # Lean /Nil pseudo-device (NIL selects /Nil over the /Zero default)
 $(MODDIR)/nil.dr: nzdrv.asm | $(MODDIR)
