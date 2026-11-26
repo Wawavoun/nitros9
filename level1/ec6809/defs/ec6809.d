@@ -83,6 +83,7 @@ VIADDRA             equ       3                   data dir reg A
 VIAT1CL             equ       4                   T1 counter/latch low
 VIAT1CH             equ       5                   T1 counter high, a write starts T1
 VIAACR              equ       $0B                 auxiliary control register
+VIAPCR              equ       $0C                 peripheral control register (CA1 edge)
 VIAIFR              equ       $0D                 interrupt flag register
 VIAIER              equ       $0E                 interrupt enable register
 

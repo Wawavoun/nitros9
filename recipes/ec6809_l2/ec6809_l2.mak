@@ -94,6 +94,10 @@ CMDS += sc68681m sc68681 t1
 # it by hand after boot with  load ec6809_6845 v1
 CMDS += ec6809_6845 v1
 
+# PS/2 keyboard on the CPU board VIA, input only for now, echo on Term.
+# Not in OS9Boot: load it by hand after boot with  load ec6809_kbd k1
+CMDS += ec6809_kbd k1
+
 # BASIC09 comes from the sibling nitros9-languages checkout, when present.
 # The same binaries run at Level 1 and Level 2. gfx/gfx2 are CoCo graphics
 # packages and are left out.
@@ -250,6 +254,9 @@ $(MODDIR)/t1: term_sc68681.asm | $(MODDIR)
 	$(AS) $< $(ASOUT)$@ $(AFLAGS)
 
 $(MODDIR)/v1: term_ec6809_6845.asm | $(MODDIR)
+	$(AS) $< $(ASOUT)$@ $(AFLAGS)
+
+$(MODDIR)/k1: term_ec6809_kbd.asm | $(MODDIR)
 	$(AS) $< $(ASOUT)$@ $(AFLAGS)
 
 # Lean /Nil pseudo-device (NIL selects /Nil over the /Zero default)
