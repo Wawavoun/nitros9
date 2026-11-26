@@ -90,6 +90,10 @@ CMDS += $(BINCMDS)
 # by hand after boot with  load sc68681m sc68681 t1
 CMDS += sc68681m sc68681 t1
 
+# 6845 screen on the I/O board, output only for now. Not in OS9Boot: load
+# it by hand after boot with  load ec6809_6845 v1
+CMDS += ec6809_6845 v1
+
 # BASIC09 comes from the sibling nitros9-languages checkout, when present.
 ifneq ($(wildcard $(LANGUAGES)/basic09),)
 vpath %.asm $(LANGUAGES)/basic09
@@ -224,6 +228,9 @@ $(MODDIR)/term_sc6850.dt: term_sc6850.asm | $(MODDIR)
 	$(AS) $< $(ASOUT)$@ $(AFLAGS) -DHwBASE=0xEEA0
 
 $(MODDIR)/t1: term_sc68681.asm | $(MODDIR)
+	$(AS) $< $(ASOUT)$@ $(AFLAGS)
+
+$(MODDIR)/v1: term_ec6809_6845.asm | $(MODDIR)
 	$(AS) $< $(ASOUT)$@ $(AFLAGS)
 
 # Lean /Nil pseudo-device (NIL selects /Nil over the /Zero default)

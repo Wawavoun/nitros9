@@ -70,6 +70,10 @@ S.StringOut         EQU       $FFEB
 * 6850 ACIA console on the I/O board.
 UARTBase            equ       $EEA0
 
+* 6845 CRTC and its 2 KB video RAM on the I/O board (ec6809_6845 driver).
+CRTCBase            equ       $EC00               register select, data at $EC01
+VRAMBase            equ       $E000               video RAM $E000-$E7FF
+
 * 6522 VIA on the CPU board. T1 makes the system tick.
 VIA0Base            equ       $EF80
 VIAREGB             equ       0                   data reg B (ORB/IRB)
