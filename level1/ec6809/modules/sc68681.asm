@@ -33,6 +33,12 @@
 ;*   - ARTOUTC keeps Y (SCF's path descriptor) across TXKICK.
 ;*   - DIRQI empties the whole receive FIFO in one interrupt and wakes the
 ;*     reader once, instead of one interrupt and one wake-up per character.
+;* Edition 7, 2026-Nov-26, same behaviour, faster per character:
+;*   - The no-op ANDB #$FF after each pointer INCB removed (256-byte
+;*     buffers wrap by themselves).
+;*   - ARTINCH and ARTOUTC write IMR only when the Rx or Tx interrupt is
+;*     really off, not on every character.
+;*   - Short branches where the target is in range (DIRQ, one DINTOFF).
 ;*
 ;* Load it after boot:  load sc68681m sc68681 t1
 ;*
@@ -85,7 +91,7 @@ MR2TxCTS    equ         $10             ; MR2 bit 4: Tx waits for CTS
 ;* Equates.
 ;*
 BSIZE       equ         256             ; size of each buffer
-MSKCNTR     equ         $FF             ; (truncates to modulo 256)
+;* 256-byte buffers: INCB wraps a pointer from 255 to 0 by itself.
 BFULL       equ         BSIZE-1         ; hard full (TX sleep / RX overrun)
 BWAKE       equ         (BSIZE-1)*7/8   ; wake writers when TX drained to this
 BHIGH       equ         BSIZE/2         ; stop reading the FIFO (68681 drops RTS)
@@ -122,7 +128,7 @@ DatSiz      equ         .
 ;*---------------------------------------------------------------------------
 
 Rev         set         0               ; (0..15)
-Edition     set         6               ; (0..255)
+Edition     set         7               ; (0..255)
 TypLng      set         Drivr+Objct
 AtrRev      set         ReEnt+Rev
 
@@ -355,13 +361,15 @@ AN50        leax        INBUF,U
             lda         ,X              ; get charac
             pshs        A               ; keep it across the Rx check
             incb
-            andb        #MSKCNTR
             stb         IPTRT,U
             dec         ICNT,U
             lda         ICNT,U          ; drained to the low-water mark?
             cmpa        #BLOW
             bhi         AN55            ; .N
-            lda         INTMI,U         ; .Y, read the FIFO again: the 68681
+            lda         [ARTINTP,U]     ; .Y, Rx interrupt already on?
+            bita        INTMI,U
+            bne         AN55            ; .Y, IMR stays as it is
+            lda         INTMI,U         ; .N, read the FIFO again: the 68681
             lbsr        DINTON          ;    asserts RTS as it empties
 AN55        puls        A               ; character for SCF
 
@@ -407,12 +415,14 @@ AO50        pshs        Y               ; SCF's path descriptor (TXKICK uses Y)
             abx                         ; X + B, B unsigned (B,X is signed)
             sta         ,X              ; store charac
             incb
-            andb        #MSKCNTR
             stb         OPTRH,U
             inc         OCNT,U
-            lda         INTMO,U         ; buffer being filled, so
+            lda         [ARTINTP,U]     ; Tx interrupt already on?
+            bita        INTMO,U
+            bne         AO60            ; .Y, IMR stays as it is
+            lda         INTMO,U         ; .N, buffer being filled, so
             lbsr        DINTON          ;    re-enable the Tx interrupt
-            lbsr        TXKICK          ;    and send now if TxRDY is set
+AO60        lbsr        TXKICK          ; send now if TxRDY is set
             puls        Y
             andcc       #^(IntMasks+Carry)
             rts
@@ -457,10 +467,10 @@ DIRQ        equ         *
             anda        [ARTINTP,U]     ; only the sources enabled now
 
             bita        INTMO,U
-            lbne        DIRQO
+            bne         DIRQO
 
             bita        INTMI,U
-            lbne        DIRQI
+            bne         DIRQI
 
             comb                        ; interrupt not caused by this port
             rts
@@ -482,7 +492,6 @@ DIRQO       equ         *
             lda         ,X              ; get character from buffer
             sta         THR_D,Y         ; send to transmitter
             incb                        ; adjust pointer
-            andb        #MSKCNTR
             stb         OPTRT,U
             dec         OCNT,U          ; TX buffer now empty?
             beq         DO60            ; .Y
@@ -533,7 +542,6 @@ DI50        leax        INBUF,U
             abx                         ; X + B, B unsigned (B,X is signed)
             sta         ,X              ; store character
             incb
-            andb        #MSKCNTR
             stb         IPTRH,U
             inc         ICNT,U
             lda         ICNT,U          ; reached the high-water mark?
@@ -670,13 +678,12 @@ TXKICK      equ         *
             lda         ,X
             sta         THR_D,Y
             incb
-            andb        #MSKCNTR
             stb         OPTRT,U
             dec         OCNT,U
             beq         TXKOFF
             rts
 TXKOFF      lda         INTMO,U
-            lbsr        DINTOFF
+            bsr         DINTOFF
 TXKX        rts
 
 ;*---------------------------------------------------------------------------
